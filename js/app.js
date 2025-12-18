@@ -9,6 +9,39 @@ const items = [
 const proveedores = ["Proveedor 1","Proveedor 2","Proveedor 3","Proveedor 4","Proveedor 5"];
 const cats = ["conjunta","laura","gustavo"];
 const LS_KEY = "publicidad_kardex_v1";
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbx6xj6-PoyslYQWqOQ0Z9MreE5fbh-9DznEwAXYrkErCG1ODUVL5JcrW6zllsqiT6T4/exec";
+const SHEETS_KEY = "1540"; // misma clave del Apps Script
+
+async function loadFromSheets(){
+  const url = `${SHEETS_URL}?key=${encodeURIComponent(SHEETS_KEY)}`;
+  const res = await fetch(url, { method: "GET" });
+  const data = await res.json();
+  if(!data.ok) throw new Error(data.error || "Error cargando Google Sheets");
+
+  // Carga db desde Sheets
+  db = data.db || {};
+
+  // Asegura llaves mínimas (ajusta si tú manejas más)
+  db.solicitudes = db.solicitudes || [];
+  db.recepciones = db.recepciones || [];
+  db.entregas   = db.entregas   || [];
+  db.stock      = db.stock      || {};
+}
+
+async function saveToSheets(){
+  const res = await fetch(SHEETS_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key: SHEETS_KEY, db })
+  });
+  const data = await res.json();
+  if(!data.ok) throw new Error(data.error || "Error guardando Google Sheets");
+}
+document.getElementById("btnSync")?.addEventListener("click", async ()=>{
+  await loadFromSheets();
+  renderAll();
+  alert("Sincronizado con Google Sheets ✅");
+});
 
 // ================== STATE ==================
 let db = JSON.parse(localStorage.getItem(LS_KEY)) || {
@@ -166,7 +199,7 @@ window.cerrar = function(){
 };
 
 // ================== SOLICITUDES ==================
-window.crearSolicitud = function(cat){
+window.crearSolicitud = async function(cat){
   const proveedor = $(`solProv-${cat}`).value;
   const fecha = ($(`solFecha-${cat}`).value || "").trim();
 
@@ -185,6 +218,7 @@ window.crearSolicitud = function(cat){
   });
 
   // seleccionar recién creada
+  await saveToSheets();
   renderAll();
   $(`solSelect-${cat}`).value = id;
   $(`recSol-${cat}`).value = id;
@@ -192,7 +226,7 @@ window.crearSolicitud = function(cat){
   refreshRecItemsPendientes(cat);
 };
 
-window.agregarItemSolicitud = function(cat){
+window.agregarItemSolicitud = async function(cat){
   const solId = $(`solSelect-${cat}`).value;
   const item = $(`solItem-${cat}`).value;
   const qty = Number($(`solQty-${cat}`).value || 0);
@@ -213,11 +247,12 @@ window.agregarItemSolicitud = function(cat){
   if(found) found.cant += qty;
   else sol.items.push({ item, cant: qty });
 
+  await saveToSheets();
   renderAll();
   $(`solSelect-${cat}`).value = solId;
 };
 
-window.delSolicitud = function(solId){
+window.delSolicitud = async function(solId){
   // Validación: no permitir borrar si tiene recepciones
   const tieneRec = db.recepciones.some(r=>r.solicitudId===solId);
   if(tieneRec){
@@ -225,6 +260,7 @@ window.delSolicitud = function(solId){
     return;
   }
   db.solicitudes = db.solicitudes.filter(s=>s.id!==solId);
+  await saveToSheets();
   renderAll();
 };
 
@@ -273,7 +309,7 @@ window.limpiarRecepcion = function(cat){
   renderCarritoRecepcion(cat);
 };
 
-window.agregarItemRecepcion = function(cat){
+window.agregarItemRecepcion = async function(cat){
   const solId = $(`recSol-${cat}`).value;
   const itemText = $(`recItem-${cat}`).value;
   const qty = Number($(`recQty-${cat}`).value || 0);
@@ -314,7 +350,7 @@ function renderCarritoRecepcion(cat){
   // (si quieres, luego lo muestro en tabla. Por ahora, controlamos con alert.)
 }
 
-window.guardarRecepcion = function(cat){
+window.guardarRecepcion = async function(cat){
   const solId = $(`recSol-${cat}`).value;
   const fecha = ($(`recFecha-${cat}`).value || "").trim();
   const proveedor = $(`recProv-${cat}`).value;
@@ -366,6 +402,7 @@ window.guardarRecepcion = function(cat){
   $(`recObs-${cat}`).value = "";
   $(`recQty-${cat}`).value = 1;
 
+  await saveToSheets();
   renderAll();
 };
 
@@ -482,8 +519,9 @@ window.guardarEntrega = function(cat){
   renderAll();
 };
 
-window.delEntrega = function(entId){
+window.delEntrega = async function(entId){
   db.entregas = db.entregas.filter(e=>e.id!==entId);
+  await saveToSheets();
   renderAll();
 };
 
@@ -771,7 +809,7 @@ function renderDashboardProveedorDetail(prov){
   }
 }
 
-window.editSolicitud = function(solId){
+window.editSolicitud = async function(solId){
   const sol = db.solicitudes.find(s=>s.id===solId);
   if(!sol) return alert("Solicitud no encontrada.");
 
@@ -798,10 +836,11 @@ window.editSolicitud = function(solId){
   sol.fecha = newFecha.trim() || sol.fecha;
   sol.items = updatedItems;
 
+  await saveToSheets();
   renderAll();
 };
 
-window.editRecepcion = function(recId){
+window.editRecepcion = async function(recId){
   const rec = db.recepciones.find(r=>r.id===recId);
   if(!rec) return alert("Recepción no encontrada.");
 
@@ -853,10 +892,11 @@ window.editRecepcion = function(recId){
   rec.obs = newObs.trim();
   rec.items = updatedItems;
 
+  await saveToSheets();
   renderAll();
 };
 
-window.editEntrega = function(entId){
+window.editEntrega = async function(entId){
   const ent = db.entregas.find(e=>e.id===entId);
   if(!ent) return alert("Entrega no encontrada.");
 
@@ -894,6 +934,7 @@ window.editEntrega = function(entId){
   ent.obs = newObs.trim();
   ent.items = updatedItems;
 
+  await saveToSheets();
   renderAll();
 };
 
@@ -1100,7 +1141,7 @@ function openEditModal({ type, id }){
 }
 
 // ===== Save handlers (validaciones fuertes) =====
-function saveEditSolicitud(solId){
+async function saveEditSolicitud(solId){
   clearEditError();
   const sol = db.solicitudes.find(s=>s.id===solId);
   if(!sol) return showEditError("Solicitud no encontrada.");
@@ -1126,10 +1167,12 @@ function saveEditSolicitud(solId){
   sol.items = read.items;
 
   editModalInstance.hide();
+
+  await saveToSheets();
   renderAll();
 }
 
-function saveEditRecepcion(recId){
+async function saveEditRecepcion(recId){
   clearEditError();
   const rec = db.recepciones.find(r=>r.id===recId);
   if(!rec) return showEditError("Recepción no encontrada.");
@@ -1175,10 +1218,12 @@ function saveEditRecepcion(recId){
   rec.items = read.items;
 
   editModalInstance.hide();
+
+  await saveToSheets();
   renderAll();
 }
 
-function saveEditEntrega(entId){
+async function saveEditEntrega(entId){
   clearEditError();
   const ent = db.entregas.find(e=>e.id===entId);
   if(!ent) return showEditError("Entrega no encontrada.");
@@ -1213,6 +1258,8 @@ function saveEditEntrega(entId){
   ent.items = read.items;
 
   editModalInstance.hide();
+
+  await saveToSheets();
   renderAll();
 }
 
@@ -1222,6 +1269,24 @@ window.editRecepcion = (id) => openEditModal({ type:"recepcion", id });
 window.editEntrega  = (id) => openEditModal({ type:"entrega", id });
 
 // ================== STARTUP ==================
-fillBasicSelects();
-renderAll();
-goView("proveedores");
+(async function startup(){
+  try{
+    fillBasicSelects();
+
+    await loadFromSheets();  // <-- trae la BD “viva”
+    renderAll();
+    goView("proveedores");
+  } catch(err){
+    console.error(err);
+    alert("No pude cargar desde Google Sheets.\n\n" + err.message);
+
+    // fallback opcional: usar localStorage si Sheets falla
+    const raw = localStorage.getItem(LS_KEY);
+    if(raw){
+      db = JSON.parse(raw);
+      renderAll();
+      goView("proveedores");
+    }
+  }
+})
+();
