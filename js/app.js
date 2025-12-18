@@ -37,29 +37,28 @@ async function loadFromSheets(){
   }
 
   const data = await res.json();
-  if(!data.ok) throw new Error(data.error || "Error cargando Google Sheets");
+  if(!data.ok){
+    throw new Error(data.error || "Error cargando Google Sheets");
+  }
 
   // Carga db desde Sheets
   db = data.db || {};
 
+  // Normaliza estructura (OBLIGATORIO)
   ensureDbShape();
-  renderAll();
 }
 
 
-async function saveToSheets(){
-  const res = await fetch(SHEETS_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ key: SHEETS_KEY, db })
-  });
-  const data = await res.json();
-  if(!data.ok) throw new Error(data.error || "Error guardando Google Sheets");
-}
+
 document.getElementById("btnSync")?.addEventListener("click", async ()=>{
-  await loadFromSheets();
-  renderAll();
-  alert("Sincronizado con Google Sheets ✅");
+  try{
+    await loadFromSheets();   // carga + ensureDbShape()
+    renderAll();              // pinta la UI
+    alert("Sincronizado con Google Sheets ✅");
+  }catch(err){
+    console.error(err);
+    alert("Error sincronizando con Google Sheets:\n\n" + (err.message || err));
+  }
 });
 
 // ================== STATE ==================
