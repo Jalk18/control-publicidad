@@ -12,21 +12,40 @@ const LS_KEY = "publicidad_kardex_v1";
 const SHEETS_URL = "https://script.google.com/macros/s/AKfycbx6xj6-PoyslYQWqOQ0Z9MreE5fbh-9DznEwAXYrkErCG1ODUVL5JcrW6zllsqiT6T4/exec";
 const SHEETS_KEY = "1540"; // misma clave del Apps Script
 
+function ensureDbShape(){
+  db = db || {};
+
+  // colecciones principales
+  db.solicitudes = Array.isArray(db.solicitudes) ? db.solicitudes : [];
+  db.recepciones = Array.isArray(db.recepciones) ? db.recepciones : [];
+  db.entregas    = Array.isArray(db.entregas)    ? db.entregas    : [];
+  db.stock       = (db.stock && typeof db.stock === "object") ? db.stock : {};
+
+  // contadores autoincrementables
+  db.counters = (db.counters && typeof db.counters === "object") ? db.counters : {};
+  db.counters.SOL = Number(db.counters.SOL || 0);
+  db.counters.REC = Number(db.counters.REC || 0);
+  db.counters.ENT = Number(db.counters.ENT || 0);
+}
+
 async function loadFromSheets(){
   const url = `${SHEETS_URL}?key=${encodeURIComponent(SHEETS_KEY)}`;
   const res = await fetch(url, { method: "GET" });
+
+  if(!res.ok){
+    throw new Error(`HTTP ${res.status} al cargar Sheets`);
+  }
+
   const data = await res.json();
   if(!data.ok) throw new Error(data.error || "Error cargando Google Sheets");
 
   // Carga db desde Sheets
   db = data.db || {};
 
-  // Asegura llaves mínimas (ajusta si tú manejas más)
-  db.solicitudes = db.solicitudes || [];
-  db.recepciones = db.recepciones || [];
-  db.entregas   = db.entregas   || [];
-  db.stock      = db.stock      || {};
+  ensureDbShape();
+  renderAll();
 }
+
 
 async function saveToSheets(){
   const res = await fetch(SHEETS_URL, {
@@ -64,6 +83,8 @@ function pad(n, len=4){
   return s.length >= len ? s : "0".repeat(len - s.length) + s;
 }
 function nextId(prefix){
+  db = db || {};
+  db.counters = db.counters || {};
   db.counters[prefix] = (db.counters[prefix] || 0) + 1;
   return `${prefix}-${pad(db.counters[prefix])}`;
 }
@@ -471,7 +492,7 @@ window.delItemCarritoEntrega = function(cat, idx){
   updateEntregaDisponible(cat);
 };
 
-window.guardarEntrega = function(cat){
+window.guardarEntrega = async function(cat){
   const persona = ($(`entPersona-${cat}`).value || "").trim();
   const fecha = ($(`entFecha-${cat}`).value || "").trim();
   const obs = ($(`entObs-${cat}`).value || "").trim();
@@ -516,6 +537,7 @@ window.guardarEntrega = function(cat){
   $(`entObs-${cat}`).value = "";
   $(`entQty-${cat}`).value = 1;
 
+  await saveToSheets();   // ✅ AQUÍ
   renderAll();
 };
 
