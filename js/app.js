@@ -2,8 +2,9 @@
 const items = [
   "AFICHES","VOLANTES","PENDONES","MINI PENDONES","PASACALLES",
   "VALLA IMPRESA","MURALES","MANILLAS DE SATIN","GORRAS ESTAMPADAS",
-  "CAMISETAS","TARJETAS DOBLE CARA","TARJETÓN PEDAGÓGICO",
-  "PENDÓN TARJETÓN","STICKERS","MICROPERFORADOS"
+  "CAMISETAS BORDADAS","CAMISETAS ESTAMPADAS", "TARJETAS DOBLE CARA",
+  "TARJETÓN PEDAGÓGICO","PENDÓN TARJETÓN","STICKERS","MICROPERFORADOS", 
+  "ROLL UP"
 ];
 
 const proveedores = ["Digiprint","Muelle Publicidad ","Bordados Barranquilla"];
@@ -262,15 +263,14 @@ function refreshRecItemsPendientes(cat){
   const sol = db.solicitudes.find(s=>s.id===solId);
   if(!sol) return;
 
-  // mostrar solo items con pendiente > 0
+  // mostrar todos los items de la solicitud (aunque el pendiente sea 0)
   sol.items.forEach(it=>{
     const pend = pendienteSolicitudItem(solId, it.item);
-    if(pend > 0){
-      const o = document.createElement("option");
-      o.value = it.item;
-      o.textContent = `${it.item} (pendiente: ${pend})`;
-      sel.appendChild(o);
-    }
+    const solicitado = solicitadoEnSolicitudItem(solId, it.item);
+    const o = document.createElement("option");
+    o.value = it.item;
+    o.textContent = `${it.item} (solicitado: ${solicitado} | pendiente: ${pend})`;
+    sel.appendChild(o);
   });
 
   if(sel.options.length === 0){
@@ -312,10 +312,11 @@ window.agregarItemRecepcion = function(cat){
   const yaEnCarrito = carritosRecepcion[cat]
     .filter(x=>x.solicitudId===solId && x.item===itemText)
     .reduce((a,x)=>a+Number(x.cant||0),0);
-
+  // Si recibes más de lo pendiente, se registrará como excedente y sumará a stock
   if(qty + yaEnCarrito > pend){
-    alert(`No puedes recibir más de lo pendiente. Pendiente: ${pend}. Ya en carrito: ${yaEnCarrito}.`);
-    return;
+    const exced = (qty + yaEnCarrito) - pend;
+    const ok = confirm(`Vas a recibir ${qty} de "${itemText}". Esto supera el pendiente actual (${pend}) considerando lo que ya tienes en carrito (${yaEnCarrito}). Excedente a registrar: ${exced}.\n\n¿Deseas continuar?`);
+    if(!ok) return;
   }
 
   // agregar al carrito de recepción
@@ -355,13 +356,21 @@ window.guardarRecepcion = function(cat){
   }
 
   // VALIDACIÓN EXTRA: re-chequear pendientes (por si cambió algo)
+  // Permitimos excedentes: si hay cantidades por encima del pendiente, pedimos confirmación
+  const excedentes = [];
   for(const it of carrito){
     const pend = pendienteSolicitudItem(solId, it.item);
-    if(Number(it.cant) > pend){
-      alert(`Error: intentas recibir ${it.cant} de ${it.item} pero el pendiente actual es ${pend}.`);
-      return;
+    const cant = Number(it.cant||0);
+    if(cant > pend){
+      excedentes.push({ item: it.item, cant, pend, exced: cant - pend });
     }
   }
+  if(excedentes.length){
+    const detalle = excedentes.map(x=>`- ${x.item}: recibido ${x.cant} | pendiente ${x.pend} | excedente ${x.exced}`).join("\n");
+    const ok = confirm(`Hay recepciones con excedente (se sumarán a stock):\n\n${detalle}\n\n¿Deseas continuar y guardar la recepción?`);
+    if(!ok) return;
+  }
+
 
   const id = nextId("REC");
   db.recepciones.push({
@@ -1326,5 +1335,96 @@ window.downloadExcel = function(view, cat){
   } catch (err){
     console.error(err);
     alert("Ocurrió un error generando el Excel.");
+  }
+};
+
+// ================== RESPALDO / RESTAURAR ==================
+// Descarga un archivo .json con toda la BD (localStorage)
+window.backupDB = function(){
+  try{
+    ensureDbShape();
+    const payload = {
+      app: "control_publicidad",
+      version: "1",
+      exportedAt: new Date().toISOString(),
+      lsKey: LS_KEY,
+      db
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Respaldo_Control_Publicidad_${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e){
+    console.error(e);
+    alert("No se pudo generar el respaldo.");
+  }
+};
+
+// Abre selector de archivo
+window.triggerRestore = function(){
+  const input = document.getElementById("restoreFile");
+  if(!input) return;
+  input.value = "";
+  input.click();
+};
+
+// Lee y restaura el respaldo seleccionado
+window.handleRestoreFile = function(file){
+  try{
+    if(!file){
+      return;
+    }
+    if(!/\.json$/i.test(file.name)){
+      alert("Selecciona un archivo .json de respaldo.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      try{
+        const text = String(reader.result || "");
+        const parsed = JSON.parse(text);
+
+        // Acepta dos formatos: {db:{...}} o directamente la db
+        const newDb = (parsed && parsed.db) ? parsed.db : parsed;
+        if(!newDb || typeof newDb !== "object"){
+          alert("El archivo no tiene un formato válido.");
+          return;
+        }
+        if(!Array.isArray(newDb.solicitudes) || !Array.isArray(newDb.recepciones) || !Array.isArray(newDb.entregas)){
+          alert("El respaldo no contiene la estructura esperada (solicitudes/recepciones/entregas).");
+          return;
+        }
+
+        const ok = confirm(
+          "Esto reemplazará la información actual guardada en este navegador.\n\n" +
+          "¿Deseas continuar y restaurar el respaldo?"
+        );
+        if(!ok) return;
+
+        db = newDb;
+        ensureDbShape();
+        localStorage.setItem(LS_KEY, JSON.stringify(db));
+
+        // Re-render general
+        try{ renderAll(); } catch(_){}
+        alert("Respaldo restaurado correctamente.");
+      } catch (err){
+        console.error(err);
+        alert("No se pudo leer el archivo. Verifica que sea un respaldo válido.");
+      }
+    };
+    reader.onerror = () => alert("No se pudo leer el archivo seleccionado.");
+    reader.readAsText(file);
+  } catch (e){
+    console.error(e);
+    alert("No se pudo restaurar el respaldo.");
   }
 };
