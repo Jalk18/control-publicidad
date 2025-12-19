@@ -1,8 +1,4 @@
 // ================== CONFIG ==================
-const LS_KEY = "publicidad_kardex_v1";
-const SHEETS_URL = "https://script.google.com/macros/s/AKfycbyPLjfhqme5YymJu0hQ5f0XCF2rsCfvLwIKZ3DlCpEyA_Q7oX-_bVpLizcf--CfHbqT/exec";
-const SHEETS_KEY = "1540"; // misma clave del Apps Script
-
 const items = [
   "AFICHES","VOLANTES","PENDONES","MINI PENDONES","PASACALLES",
   "VALLA IMPRESA","MURALES","MANILLAS DE SATIN","GORRAS ESTAMPADAS",
@@ -10,145 +6,32 @@ const items = [
   "PENDÓN TARJETÓN","STICKERS","MICROPERFORADOS"
 ];
 
-const proveedores = ["Proveedor 1","Proveedor 2","Proveedor 3","Proveedor 4","Proveedor 5"];
+const proveedores = ["Digiprint","Muelle Publicidad ","Bordados Barranquilla"];
 const cats = ["conjunta","laura","gustavo"];
+const LS_KEY = "publicidad_kardex_v1";
 
-// 🔴 ESTO SIEMPRE ARRIBA
-let db = {};
+// ================== STATE ==================
+let db = JSON.parse(localStorage.getItem(LS_KEY)) || {
+  counters: { SOL: 0, REC: 0, ENT: 0 },
+  solicitudes: [],   // {id,categoria,proveedor,fecha,items:[{item,cant}]}
+  recepciones: [],   // {id,solicitudId,categoria,proveedor,fecha,items:[{item,cant}],obs}
+  entregas: []       // {id,categoria,fecha,persona,estado,obs,items:[{item,cant}]}
+};
 
-// ================== FUNCIÓN CATNORM MEJORADA ==================
-function catNorm(v){
-  if(!v) return '';
-  const map = {
-    'conjunta': 'conjunta',
-    'laura': 'laura',
-    'gustavo': 'gustavo',
-    // Variaciones posibles
-    'Laura': 'laura',
-    'LAURA': 'laura',
-    'Gustavo': 'gustavo',
-    'GUSTAVO': 'gustavo',
-    'Conjunta': 'conjunta',
-    'CONJUNTA': 'conjunta'
-  };
-  
-  const key = String(v || '').trim();
-  return map[key] || key.toLowerCase();
-}
-
-// ================== NORMALIZAR DATOS EXISTENTES ==================
-function normalizeExistingData(){
-  if(!db.solicitudes || !db.recepciones || !db.entregas) return;
-  
-  console.log("Normalizando datos existentes...");
-  
-  // Normalizar solicitudes
-  db.solicitudes.forEach(s => {
-    if(s.categoria) s.categoria = catNorm(s.categoria);
-  });
-  
-  // Normalizar recepciones
-  db.recepciones.forEach(r => {
-    if(r.categoria) r.categoria = catNorm(r.categoria);
-  });
-  
-  // Normalizar entregas
-  db.entregas.forEach(e => {
-    if(e.categoria) e.categoria = catNorm(e.categoria);
-  });
-  
-  console.log("Datos normalizados correctamente");
-}
-
+// ================== MIGRACIONES / SHAPE ==================
+// (para no romper datos existentes en localStorage)
 function ensureDbShape(){
-  db = db || {};
+  db.counters = db.counters || { SOL: 0, REC: 0, ENT: 0 };
   db.solicitudes = Array.isArray(db.solicitudes) ? db.solicitudes : [];
   db.recepciones = Array.isArray(db.recepciones) ? db.recepciones : [];
-  db.entregas    = Array.isArray(db.entregas)    ? db.entregas    : [];
-  db.stock       = (db.stock && typeof db.stock === "object") ? db.stock : {};
+  db.entregas = Array.isArray(db.entregas) ? db.entregas : [];
 
-  db.counters = (db.counters && typeof db.counters === "object") ? db.counters : {};
-  db.counters.SOL = Number(db.counters.SOL || 0);
-  db.counters.REC = Number(db.counters.REC || 0);
-  db.counters.ENT = Number(db.counters.ENT || 0);
-}
-
-// cargar desde localStorage (si existe)
-const raw = localStorage.getItem(LS_KEY);
-if (raw) {
-  try { db = JSON.parse(raw); } catch { db = {}; }
+  // Asegurar campo estado en entregas antiguas
+  db.entregas.forEach(e=>{
+    if(!e.estado) e.estado = "ENTREGADO";
+  });
 }
 ensureDbShape();
-normalizeExistingData(); // Normalizar datos existentes al cargar
-
-// ================== FUNCIONES GOOGLE SHEETS ==================
-async function loadFromSheets(){
-  try {
-    const url = `${SHEETS_URL}?key=${encodeURIComponent(SHEETS_KEY)}`;
-    const res = await fetch(url, { method: "GET" });
-
-    if(!res.ok){
-      throw new Error(`HTTP ${res.status} al cargar Sheets`);
-    }
-
-    const data = await res.json();
-    if(!data.ok){
-      throw new Error(data.error || "Error cargando Google Sheets");
-    }
-
-    // Carga db desde Sheets
-    db = data.db || {};
-
-    // Normaliza estructura
-    ensureDbShape();
-    normalizeExistingData();
-    
-    return data;
-  } catch (err) {
-    console.error("Error en loadFromSheets:", err);
-    throw err;
-  }
-}
-
-async function saveToSheets(){
-  try {
-    const res = await fetch(SHEETS_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key: SHEETS_KEY, db })
-    });
-    
-    if(!res.ok) {
-      throw new Error(`HTTP ${res.status} al guardar en Sheets`);
-    }
-    
-    const data = await res.json();
-    if(!data.ok) {
-      throw new Error(data.error || "Error guardando Google Sheets");
-    }
-    
-    // También guardar en localStorage como respaldo
-    localStorage.setItem(LS_KEY, JSON.stringify(db));
-    
-    return data;
-  } catch (err) {
-    console.error("Error en saveToSheets:", err);
-    // Guardar en localStorage como respaldo
-    localStorage.setItem(LS_KEY, JSON.stringify(db));
-    throw err;
-  }
-}
-
-document.getElementById("btnSync")?.addEventListener("click", async ()=>{
-  try{
-    await loadFromSheets();
-    renderAll();
-    alert("Sincronizado con Google Sheets ✅");
-  }catch(err){
-    console.error(err);
-    alert("Error sincronizando con Google Sheets:\n\n" + (err.message || err));
-  }
-});
 
 // carritos temporales
 let carritosRecepcion = { conjunta: [], laura: [], gustavo: [] };
@@ -163,29 +46,22 @@ function pad(n, len=4){
   return s.length >= len ? s : "0".repeat(len - s.length) + s;
 }
 function nextId(prefix){
-  db = db || {};
-  db.counters = db.counters || {};
   db.counters[prefix] = (db.counters[prefix] || 0) + 1;
   return `${prefix}-${pad(db.counters[prefix])}`;
 }
 function getEl(id){
   return document.getElementById(id);
 }
+function catNorm(v){
+  return String(v || "").trim().toLowerCase(); // "CONJUNTA" => "conjunta"
+}
 
 // ================== INIT SELECTS ==================
 function fillBasicSelects(){
-  console.log("Inicializando selects...");
-  
   cats.forEach(cat=>{
     // proveedor selects
     const solProv = $(`solProv-${cat}`);
     const recProv = $(`recProv-${cat}`);
-    
-    if(!solProv || !recProv) {
-      console.error(`No se encontraron elementos para categoría: ${cat}`);
-      return;
-    }
-    
     [solProv, recProv].forEach(sel=>{
       sel.innerHTML = "";
       proveedores.forEach(p=>{
@@ -221,15 +97,12 @@ function fillBasicSelects(){
     $(`entItem-${cat}`).addEventListener("change", ()=> updateEntregaDisponible(cat));
     $(`entQty-${cat}`).addEventListener("input", ()=> updateEntregaDisponible(cat));
   });
-  
-  console.log("Selects inicializados correctamente");
 }
 
 // ================== COMPUTOS ==================
 function solicitadoPorCatItem(cat, item){
-  const catNormVal = catNorm(cat);
   let total = 0;
-  db.solicitudes.filter(s=>catNorm(s.categoria)===catNormVal).forEach(s=>{
+  db.solicitudes.filter(s=>s.categoria===cat).forEach(s=>{
     s.items.forEach(it=>{
       if(it.item===item) total += Number(it.cant||0);
     });
@@ -238,9 +111,8 @@ function solicitadoPorCatItem(cat, item){
 }
 
 function recibidoPorCatItem(cat, item){
-  const catNormVal = catNorm(cat);
   let total = 0;
-  db.recepciones.filter(r=>catNorm(r.categoria)===catNormVal).forEach(r=>{
+  db.recepciones.filter(r=>r.categoria===cat).forEach(r=>{
     r.items.forEach(it=>{
       if(it.item===item) total += Number(it.cant||0);
     });
@@ -249,9 +121,8 @@ function recibidoPorCatItem(cat, item){
 }
 
 function entregadoPorCatItem(cat, item){
-  const catNormVal = catNorm(cat);
   let total = 0;
-  db.entregas.filter(e=>catNorm(e.categoria)===catNormVal).forEach(e=>{
+  db.entregas.filter(e=>e.categoria===cat).forEach(e=>{
     e.items.forEach(it=>{
       if(it.item===item) total += Number(it.cant||0);
     });
@@ -301,7 +172,7 @@ window.goView = function(view){
 // ================== GUARDAR / SESION ==================
 window.guardarTodo = function(){
   localStorage.setItem(LS_KEY, JSON.stringify(db));
-  alert("Guardado en localStorage ✅");
+  alert("Guardado ✅");
 };
 
 window.cerrar = function(){
@@ -310,66 +181,33 @@ window.cerrar = function(){
 };
 
 // ================== SOLICITUDES ==================
-window.crearSolicitud = async function(cat){
-  console.log("Crear solicitud para categoría:", cat);
-  
-  const provSelect = $(`solProv-${cat}`);
-  const fechaInput = $(`solFecha-${cat}`);
-  
-  if(!provSelect || !fechaInput) {
-    alert(`Error: No se encontraron los elementos para la categoría ${cat}`);
-    return;
-  }
-  
-  const proveedor = provSelect.value;
-  const fecha = (fechaInput.value || "").trim();
+window.crearSolicitud = function(cat){
+  const proveedor = $(`solProv-${cat}`).value;
+  const fecha = ($(`solFecha-${cat}`).value || "").trim();
 
   if(!fecha){
     alert("Selecciona la fecha de solicitud.");
-    fechaInput.focus();
     return;
   }
 
-  if(!proveedor){
-    alert("Selecciona un proveedor.");
-    provSelect.focus();
-    return;
-  }
+  const id = nextId("SOL");
+  db.solicitudes.push({
+    id,
+    categoria: cat,
+    proveedor,
+    fecha,
+    items: []
+  });
 
-  try {
-    const id = nextId("SOL");
-    db.solicitudes.push({
-      id,
-      categoria: catNorm(cat), // NORMALIZAR AL GUARDAR
-      proveedor,
-      fecha,
-      items: []
-    });
-
-    console.log(`Solicitud ${id} creada`);
-    
-    // Guardar primero
-    await saveToSheets();
-    
-    // Luego renderizar y actualizar selects
-    renderAll();
-    
-    // Establecer la solicitud recién creada como seleccionada
-    $(`solSelect-${cat}`).value = id;
-    $(`recSol-${cat}`).value = id;
-    
-    syncRecProveedorDesdeSolicitud(cat);
-    refreshRecItemsPendientes(cat);
-    
-    alert(`Solicitud ${id} creada exitosamente.`);
-    
-  } catch (error) {
-    console.error("Error al crear solicitud:", error);
-    alert("Error al crear la solicitud: " + error.message);
-  }
+  // seleccionar recién creada
+  renderAll();
+  $(`solSelect-${cat}`).value = id;
+  $(`recSol-${cat}`).value = id;
+  syncRecProveedorDesdeSolicitud(cat);
+  refreshRecItemsPendientes(cat);
 };
 
-window.agregarItemSolicitud = async function(cat){
+window.agregarItemSolicitud = function(cat){
   const solId = $(`solSelect-${cat}`).value;
   const item = $(`solItem-${cat}`).value;
   const qty = Number($(`solQty-${cat}`).value || 0);
@@ -390,12 +228,11 @@ window.agregarItemSolicitud = async function(cat){
   if(found) found.cant += qty;
   else sol.items.push({ item, cant: qty });
 
-  await saveToSheets();
   renderAll();
   $(`solSelect-${cat}`).value = solId;
 };
 
-window.delSolicitud = async function(solId){
+window.delSolicitud = function(solId){
   // Validación: no permitir borrar si tiene recepciones
   const tieneRec = db.recepciones.some(r=>r.solicitudId===solId);
   if(tieneRec){
@@ -403,7 +240,6 @@ window.delSolicitud = async function(solId){
     return;
   }
   db.solicitudes = db.solicitudes.filter(s=>s.id!==solId);
-  await saveToSheets();
   renderAll();
 };
 
@@ -452,7 +288,7 @@ window.limpiarRecepcion = function(cat){
   renderCarritoRecepcion(cat);
 };
 
-window.agregarItemRecepcion = async function(cat){
+window.agregarItemRecepcion = function(cat){
   const solId = $(`recSol-${cat}`).value;
   const itemText = $(`recItem-${cat}`).value;
   const qty = Number($(`recQty-${cat}`).value || 0);
@@ -490,9 +326,10 @@ window.agregarItemRecepcion = async function(cat){
 
 function renderCarritoRecepcion(cat){
   // no tabla dedicada; se refleja al guardar en el listado de recepciones.
+  // (si quieres, luego lo muestro en tabla. Por ahora, controlamos con alert.)
 }
 
-window.guardarRecepcion = async function(cat){
+window.guardarRecepcion = function(cat){
   const solId = $(`recSol-${cat}`).value;
   const fecha = ($(`recFecha-${cat}`).value || "").trim();
   const proveedor = $(`recProv-${cat}`).value;
@@ -530,7 +367,7 @@ window.guardarRecepcion = async function(cat){
   db.recepciones.push({
     id,
     solicitudId: solId,
-    categoria: catNorm(cat), // NORMALIZAR AL GUARDAR
+    categoria: cat,
     proveedor,
     fecha,
     items: carrito.map(x=>({ item: x.item, cant: x.cant })),
@@ -544,13 +381,11 @@ window.guardarRecepcion = async function(cat){
   $(`recObs-${cat}`).value = "";
   $(`recQty-${cat}`).value = 1;
 
-  await saveToSheets();
   renderAll();
 };
 
-window.delRecepcion = async function(recId){
+window.delRecepcion = function(recId){
   db.recepciones = db.recepciones.filter(r=>r.id!==recId);
-  await saveToSheets();
   renderAll();
 };
 
@@ -614,9 +449,10 @@ window.delItemCarritoEntrega = function(cat, idx){
   updateEntregaDisponible(cat);
 };
 
-window.guardarEntrega = async function(cat){
+window.guardarEntrega = function(cat){
   const persona = ($(`entPersona-${cat}`).value || "").trim();
   const fecha = ($(`entFecha-${cat}`).value || "").trim();
+  const estado = ($(`entEstado-${cat}`)?.value || "ENTREGADO").trim();
   const obs = ($(`entObs-${cat}`).value || "").trim();
 
   // VALIDACIONES
@@ -645,9 +481,10 @@ window.guardarEntrega = async function(cat){
   const id = nextId("ENT");
   db.entregas.push({
     id,
-    categoria: catNorm(cat), // NORMALIZAR AL GUARDAR
+    categoria: cat,
     fecha,
     persona,
+    estado,
     obs,
     items: carritosEntrega[cat].map(x=>({ item:x.item, cant:x.cant }))
   });
@@ -656,16 +493,15 @@ window.guardarEntrega = async function(cat){
   carritosEntrega[cat] = [];
   $(`entPersona-${cat}`).value = "";
   $(`entFecha-${cat}`).value = "";
+  if($(`entEstado-${cat}`)) $(`entEstado-${cat}`).value = "ENTREGADO";
   $(`entObs-${cat}`).value = "";
   $(`entQty-${cat}`).value = 1;
 
-  await saveToSheets();
   renderAll();
 };
 
-window.delEntrega = async function(entId){
+window.delEntrega = function(entId){
   db.entregas = db.entregas.filter(e=>e.id!==entId);
-  await saveToSheets();
   renderAll();
 };
 
@@ -692,8 +528,7 @@ function renderSelectSolicitudes(cat){
   const solSel = $(`solSelect-${cat}`);
   const recSel = $(`recSol-${cat}`);
 
-  const catNormVal = catNorm(cat);
-  const sols = db.solicitudes.filter(s=>catNorm(s.categoria)===catNormVal);
+  const sols = db.solicitudes.filter(s=>s.categoria===cat);
 
   solSel.innerHTML = "";
   recSel.innerHTML = "";
@@ -729,8 +564,7 @@ function renderSolicitudes(cat){
   const tbody = $(`bodySolicitudes-${cat}`);
   tbody.innerHTML = "";
 
-  const catNormVal = catNorm(cat);
-  const arr = db.solicitudes.filter(s=>catNorm(s.categoria)===catNormVal).slice().reverse();
+  const arr = db.solicitudes.filter(s=>s.categoria===cat).slice().reverse();
 
   if(arr.length === 0){
     tbody.innerHTML = `<tr><td colspan="5" class="text-muted">Sin solicitudes</td></tr>`;
@@ -745,7 +579,10 @@ function renderSolicitudes(cat){
         <td>${s.fecha}</td>
         <td class="text-start">${fmtItems(s.items)}</td>
         <td>
-          <button class="btn btn-sm btn-warning" onclick="editSolicitud('${s.id}')">Editar</button>
+          <div class="d-flex justify-content-center gap-1 flex-wrap">
+            <button class="btn btn-sm btn-warning" onclick="editSolicitud('${s.id}')">Editar</button>
+            <button class="btn btn-sm btn-danger" onclick="confirmDelSolicitud('${s.id}')">Eliminar</button>
+          </div>
         </td>
       </tr>
     `;
@@ -756,8 +593,7 @@ function renderRecepciones(cat){
   const tbody = $(`bodyRecepciones-${cat}`);
   tbody.innerHTML = "";
 
-  const catNormVal = catNorm(cat);
-  const arr = db.recepciones.filter(r=>catNorm(r.categoria)===catNormVal).slice().reverse();
+  const arr = db.recepciones.filter(r=>r.categoria===cat).slice().reverse();
 
   if(arr.length === 0){
     tbody.innerHTML = `<tr><td colspan="7" class="text-muted">Sin recepciones</td></tr>`;
@@ -774,7 +610,10 @@ function renderRecepciones(cat){
         <td class="text-start">${fmtItems(r.items)}</td>
         <td class="text-start">${r.obs || ""}</td>
         <td>
-          <button class="btn btn-sm btn-warning" onclick="editRecepcion('${r.id}')">Editar</button>
+          <div class="d-flex justify-content-center gap-1 flex-wrap">
+            <button class="btn btn-sm btn-warning" onclick="editRecepcion('${r.id}')">Editar</button>
+            <button class="btn btn-sm btn-danger" onclick="confirmDelRecepcion('${r.id}')">Eliminar</button>
+          </div>
         </td>
       </tr>
     `;
@@ -785,11 +624,10 @@ function renderEntregas(cat){
   const tbody = $(`bodyEntregas-${cat}`);
   tbody.innerHTML = "";
 
-  const catNormVal = catNorm(cat);
-  const arr = db.entregas.filter(e=>catNorm(e.categoria)===catNormVal).slice().reverse();
+  const arr = db.entregas.filter(e=>e.categoria===cat).slice().reverse();
 
   if(arr.length === 0){
-    tbody.innerHTML = `<tr><td colspan="6" class="text-muted">Sin entregas</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="text-muted">Sin entregas</td></tr>`;
     return;
   }
 
@@ -799,15 +637,30 @@ function renderEntregas(cat){
         <td><b>${e.id}</b></td>
         <td>${e.fecha}</td>
         <td class="text-start">${e.persona}</td>
+        <td>${e.estado || "ENTREGADO"}</td>
         <td class="text-start">${fmtItems(e.items)}</td>
         <td class="text-start">${e.obs || ""}</td>
         <td>
-          <button class="btn btn-sm btn-warning" onclick="editEntrega('${e.id}')">Editar</button>
+          <div class="d-flex justify-content-center gap-1 flex-wrap">
+            <button class="btn btn-sm btn-warning" onclick="editEntrega('${e.id}')">Editar</button>
+            <button class="btn btn-sm btn-danger" onclick="confirmDelEntrega('${e.id}')">Eliminar</button>
+          </div>
         </td>
       </tr>
     `;
   });
 }
+
+// ================== CONFIRMACIONES DE BORRADO ==================
+window.confirmDelSolicitud = function(solId){
+  if(confirm(`¿Eliminar la solicitud ${solId}?`)) window.delSolicitud(solId);
+};
+window.confirmDelRecepcion = function(recId){
+  if(confirm(`¿Eliminar la recepción ${recId}?`)) window.delRecepcion(recId);
+};
+window.confirmDelEntrega = function(entId){
+  if(confirm(`¿Eliminar la entrega ${entId}?`)) window.delEntrega(entId);
+};
 
 function renderStock(){
   const tbody = $("bodyStock");
@@ -829,13 +682,13 @@ function renderDashboard(){
   const sumObjItems = (itemsArr)=> itemsArr.reduce((a,it)=>a + (Number(it.cant)||0), 0);
 
   const totalSolicitadoCat = (cat) =>
-    db.solicitudes.filter(s=>catNorm(s.categoria)===catNorm(cat)).reduce((acc,s)=>acc + sumObjItems(s.items), 0);
+    db.solicitudes.filter(s=>s.categoria===cat).reduce((acc,s)=>acc + sumObjItems(s.items), 0);
 
   const totalRecibidoCat = (cat) =>
-    db.recepciones.filter(r=>catNorm(r.categoria)===catNorm(cat)).reduce((acc,r)=>acc + sumObjItems(r.items), 0);
+    db.recepciones.filter(r=>r.categoria===cat).reduce((acc,r)=>acc + sumObjItems(r.items), 0);
 
   const totalEntregadoCat = (cat) =>
-    db.entregas.filter(e=>catNorm(e.categoria)===catNorm(cat)).reduce((acc,e)=>acc + sumObjItems(e.items), 0);
+    db.entregas.filter(e=>e.categoria===cat).reduce((acc,e)=>acc + sumObjItems(e.items), 0);
 
   const totalStockCat = (cat) => {
     let t = 0;
@@ -910,7 +763,7 @@ function renderDashboardProveedorDropdown(){
   if(!sel || !body) return;
 
   // proveedores presentes en recepciones (si no hay, usa la lista base)
-  const base = ["Proveedor 1","Proveedor 2","Proveedor 3","Proveedor 4","Proveedor 5"];
+  const base = ["Digiprint","Muelle Publicidad ","Bordados Barranquilla"];
   const fromDb = Array.from(new Set(db.recepciones.map(r=>r.proveedor).filter(Boolean)));
   const provs = (fromDb.length ? fromDb : base);
 
@@ -923,9 +776,8 @@ function renderDashboardProveedorDropdown(){
 }
 
 function recibidoPorProveedorCatItem(prov, cat, item){
-  const catNormVal = catNorm(cat);
   return db.recepciones
-    .filter(r=>r.proveedor===prov && catNorm(r.categoria)===catNormVal)
+    .filter(r=>r.proveedor===prov && r.categoria===cat)
     .reduce((acc,r)=>{
       const it = r.items.find(x=>x.item===item);
       return acc + (it ? (Number(it.cant)||0) : 0);
@@ -958,9 +810,137 @@ function renderDashboardProveedorDetail(prov){
   }
 }
 
+window.editSolicitud = function(solId){
+  const sol = db.solicitudes.find(s=>s.id===solId);
+  if(!sol) return alert("Solicitud no encontrada.");
+
+  const newProv = prompt("Proveedor:", sol.proveedor);
+  if(newProv === null) return;
+
+  const newFecha = prompt("Fecha (YYYY-MM-DD):", sol.fecha);
+  if(newFecha === null) return;
+
+  // editar cantidades por item
+  const updatedItems = [];
+  for(const it of sol.items){
+    const recibido = recibidoPorSolicitudItem(solId, it.item);
+    const val = prompt(`Cantidad solicitada para ${it.item} (mínimo recibido: ${recibido})`, String(it.cant));
+    if(val === null) return; // cancelar todo
+    const n = Number(val);
+    if(!Number.isFinite(n) || n < recibido){
+      return alert(`Valor inválido. Para ${it.item} no puedes ser menor que lo recibido (${recibido}).`);
+    }
+    if(n > 0) updatedItems.push({ item: it.item, cant: n });
+  }
+
+  sol.proveedor = newProv.trim() || sol.proveedor;
+  sol.fecha = newFecha.trim() || sol.fecha;
+  sol.items = updatedItems;
+
+  renderAll();
+};
+
+window.editRecepcion = function(recId){
+  const rec = db.recepciones.find(r=>r.id===recId);
+  if(!rec) return alert("Recepción no encontrada.");
+
+  const solId = rec.solicitudId;
+  const sol = db.solicitudes.find(s=>s.id===solId);
+  if(!sol) return alert("La solicitud asociada no existe.");
+
+  const newFecha = prompt("Fecha de recepción (YYYY-MM-DD):", rec.fecha);
+  if(newFecha === null) return;
+  if(!newFecha.trim()) return alert("La fecha es obligatoria.");
+
+  const newProv = prompt("Proveedor:", rec.proveedor);
+  if(newProv === null) return;
+
+  const newObs = prompt("Observaciones:", rec.obs || "");
+  if(newObs === null) return;
+
+  // Para validar: recibido total por solicitud+item excluyendo esta recepción
+  function recibidoExcluyendo(item){
+    let total = 0;
+    db.recepciones
+      .filter(r=>r.solicitudId===solId && r.id!==recId)
+      .forEach(r=>{
+        r.items.forEach(it=>{
+          if(it.item===item) total += Number(it.cant||0);
+        });
+      });
+    return total;
+  }
+
+  const updatedItems = [];
+  for(const it of rec.items){
+    const solicitado = solicitadoEnSolicitudItem(solId, it.item);
+    const recibidoOtros = recibidoExcluyendo(it.item);
+    const maxPermitido = Math.max(0, solicitado - recibidoOtros);
+
+    const val = prompt(`Cantidad recibida para ${it.item} (máx permitido: ${maxPermitido})`, String(it.cant));
+    if(val === null) return;
+    const n = Number(val);
+
+    if(!Number.isFinite(n) || n < 0 || n > maxPermitido){
+      return alert(`Valor inválido. Para ${it.item} no puede superar ${maxPermitido}.`);
+    }
+    if(n > 0) updatedItems.push({ item: it.item, cant: n });
+  }
+
+  rec.fecha = newFecha.trim();
+  rec.proveedor = newProv.trim() || rec.proveedor;
+  rec.obs = newObs.trim();
+  rec.items = updatedItems;
+
+  renderAll();
+};
+
+window.editEntrega = function(entId){
+  const ent = db.entregas.find(e=>e.id===entId);
+  if(!ent) return alert("Entrega no encontrada.");
+
+  const cat = ent.categoria;
+
+  const newPersona = prompt("Persona:", ent.persona);
+  if(newPersona === null) return;
+  if(!newPersona.trim()) return alert("Persona es obligatoria.");
+
+  const newFecha = prompt("Fecha (YYYY-MM-DD):", ent.fecha);
+  if(newFecha === null) return;
+  if(!newFecha.trim()) return alert("La fecha es obligatoria.");
+
+  const newObs = prompt("Observación:", ent.obs || "");
+  if(newObs === null) return;
+
+  // stock disponible para editar: stock actual + lo que esta entrega ya había consumido en ese item
+  const updatedItems = [];
+  for(const it of ent.items){
+    const stockActual = stockPorCatItem(cat, it.item);
+    const disponibleParaEditar = stockActual + Number(it.cant||0);
+
+    const val = prompt(`Cantidad entregada para ${it.item} (disponible para editar: ${disponibleParaEditar})`, String(it.cant));
+    if(val === null) return;
+    const n = Number(val);
+
+    if(!Number.isFinite(n) || n < 0 || n > disponibleParaEditar){
+      return alert(`Valor inválido. Para ${it.item} no puede superar ${disponibleParaEditar}.`);
+    }
+    if(n > 0) updatedItems.push({ item: it.item, cant: n });
+  }
+
+  ent.persona = newPersona.trim();
+  ent.fecha = newFecha.trim();
+  ent.obs = newObs.trim();
+  ent.items = updatedItems;
+
+  renderAll();
+};
+
 // ===== Modal helpers =====
 let editModalInstance = null;
-let editContext = null;
+let editContext = null; // { type: 'solicitud'|'recepcion'|'entrega', id: '...', categoria: '...' }
+
+function $(id){ return document.getElementById(id); }
 
 function showEditError(msg){
   const a = $("editModalAlert");
@@ -991,6 +971,7 @@ function buildItemMap(itemsArr){
   return m;
 }
 
+// Crea la tabla de items con inputs y límites por fila
 function renderEditItemsTable({ valueMap, limitMap, noteMap }){
   const tbody = $("editItemsBody");
   tbody.innerHTML = "";
@@ -1042,8 +1023,9 @@ function openEditModal({ type, id }){
 
   // UI toggles
   $("editPersonaWrap").style.display = (type === "entrega") ? "" : "none";
+  $("editEstadoWrap").style.display = (type === "entrega") ? "" : "none";
   $("editObsWrap").style.display = (type === "recepcion" || type === "entrega") ? "" : "none";
-  $("editProveedor").disabled = (type === "entrega");
+  $("editProveedor").disabled = (type === "entrega"); // entrega a personas NO depende del proveedor
   $("editProveedorHelp").textContent = (type === "entrega")
     ? "En entregas a personas no aplica proveedor."
     : "";
@@ -1102,6 +1084,7 @@ function openEditModal({ type, id }){
       return total;
     }
 
+    // límites: máximo = solicitado - recibidoOtros
     const limitMap = {};
     const noteMap = {};
     items.forEach(item=>{
@@ -1125,13 +1108,16 @@ function openEditModal({ type, id }){
     if(!ent) return alert("Entrega no encontrada.");
 
     $("editModalTitle").textContent = `Editar Entrega ${ent.id} (${ent.categoria.toUpperCase()})`;
-    fillProveedorSelect(proveedores[0] || "Proveedor 1");
+    // proveedor deshabilitado
+    fillProveedorSelect(proveedores[0] || "Digiprint");
     $("editFecha").value = ent.fecha || "";
     $("editPersona").value = ent.persona || "";
+    $("editEstado").value = ent.estado || "ENTREGADO";
     $("editObs").value = ent.obs || "";
 
     const current = buildItemMap(ent.items);
 
+    // límites: máximo = stock actual + lo que ya tenía esta entrega
     const limitMap = {};
     const noteMap = {};
     items.forEach(item=>{
@@ -1154,8 +1140,8 @@ function openEditModal({ type, id }){
   editModalInstance.show();
 }
 
-// ===== Save handlers =====
-async function saveEditSolicitud(solId){
+// ===== Save handlers (validaciones fuertes) =====
+function saveEditSolicitud(solId){
   clearEditError();
   const sol = db.solicitudes.find(s=>s.id===solId);
   if(!sol) return showEditError("Solicitud no encontrada.");
@@ -1167,6 +1153,7 @@ async function saveEditSolicitud(solId){
   const read = readModalItems();
   if(read.error) return showEditError(read.error);
 
+  // Validar mínimos por recibido
   for(const item of items){
     const rec = recibidoPorSolicitudItem(solId, item);
     const entered = (read.items.find(x=>x.item===item)?.cant) || 0;
@@ -1180,12 +1167,10 @@ async function saveEditSolicitud(solId){
   sol.items = read.items;
 
   editModalInstance.hide();
-
-  await saveToSheets();
   renderAll();
 }
 
-async function saveEditRecepcion(recId){
+function saveEditRecepcion(recId){
   clearEditError();
   const rec = db.recepciones.find(r=>r.id===recId);
   if(!rec) return showEditError("Recepción no encontrada.");
@@ -1213,6 +1198,7 @@ async function saveEditRecepcion(recId){
   const read = readModalItems();
   if(read.error) return showEditError(read.error);
 
+  // Validar máximos
   for(const item of items){
     const solicitado = solicitadoEnSolicitudItem(solId, item);
     const recibidoOtros = recibidoExcluyendo(item);
@@ -1230,12 +1216,10 @@ async function saveEditRecepcion(recId){
   rec.items = read.items;
 
   editModalInstance.hide();
-
-  await saveToSheets();
   renderAll();
 }
 
-async function saveEditEntrega(entId){
+function saveEditEntrega(entId){
   clearEditError();
   const ent = db.entregas.find(e=>e.id===entId);
   if(!ent) return showEditError("Entrega no encontrada.");
@@ -1247,11 +1231,13 @@ async function saveEditEntrega(entId){
   if(!persona) return showEditError("La persona es obligatoria.");
 
   const obs = $("editObs").value || "";
+  const estado = ($("editEstado").value || "ENTREGADO").trim();
 
   const current = buildItemMap(ent.items);
   const read = readModalItems();
   if(read.error) return showEditError(read.error);
 
+  // Validar contra stock editable
   for(const item of items){
     const stock = stockPorCatItem(ent.categoria, item);
     const actual = current[item] ?? 0;
@@ -1265,57 +1251,80 @@ async function saveEditEntrega(entId){
 
   ent.fecha = fecha;
   ent.persona = persona;
+  ent.estado = estado;
   ent.obs = obs.trim();
   ent.items = read.items;
 
   editModalInstance.hide();
-
-  await saveToSheets();
   renderAll();
 }
 
-// ===== Exponer funciones editar =====
+// ===== Exponer funciones editar para botones =====
 window.editSolicitud = (id) => openEditModal({ type:"solicitud", id });
 window.editRecepcion = (id) => openEditModal({ type:"recepcion", id });
 window.editEntrega  = (id) => openEditModal({ type:"entrega", id });
 
 // ================== STARTUP ==================
-(async function startup(){
-  console.log("Iniciando aplicación...");
-  
-  try {
-    // Verificar que estamos en la página correcta
-    if(!document.getElementById('solProv-conjunta')) {
-      console.error("Elementos del DOM no encontrados");
+fillBasicSelects();
+renderAll();
+goView("proveedores");
+
+// ================== EXPORT EXCEL (XLSX) ==================
+// view: 'proveedores' | 'entregas'
+window.downloadExcel = function(view, cat){
+  try{
+    if(typeof XLSX === "undefined"){
+      alert("No se pudo cargar la librería de Excel (XLSX). Revisa tu conexión.");
       return;
     }
-    
-    fillBasicSelects();
-    console.log("Selects llenados");
 
-    // Intentar cargar desde Sheets
-    try {
-      await loadFromSheets();
-      console.log("Datos cargados desde Sheets");
-    } catch(sheetsError) {
-      console.warn("No se pudo cargar desde Sheets:", sheetsError);
-      // Cargar desde localStorage
-      const raw = localStorage.getItem(LS_KEY);
-      if(raw){
-        db = JSON.parse(raw);
-        ensureDbShape();
-        normalizeExistingData();
-        console.log("Datos cargados desde localStorage");
-      }
+    const wb = XLSX.utils.book_new();
+    const catLabel = String(cat||"").toUpperCase();
+
+    const addSheet = (name, rows) => {
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      XLSX.utils.book_append_sheet(wb, ws, name);
+    };
+
+    if(view === "entregas"){
+      const data = db.entregas.filter(e=>e.categoria===cat).slice().reverse();
+      const rows = [
+        ["ID","Fecha","Persona","Estado","Items","Observación"],
+        ...data.map(e=>[
+          e.id,
+          e.fecha,
+          e.persona,
+          e.estado || "ENTREGADO",
+          fmtItems(e.items||[]),
+          e.obs || ""
+        ])
+      ];
+      addSheet("Entregas", rows);
+
+    } else if(view === "proveedores"){
+      const sols = db.solicitudes.filter(s=>s.categoria===cat).slice().reverse();
+      const recs = db.recepciones.filter(r=>r.categoria===cat).slice().reverse();
+
+      const rowsSol = [
+        ["ID","Proveedor","Fecha","Items"],
+        ...sols.map(s=>[s.id, s.proveedor, s.fecha, fmtItems(s.items||[])])
+      ];
+      const rowsRec = [
+        ["ID","Solicitud","Fecha","Proveedor","Items","Observación"],
+        ...recs.map(r=>[r.id, r.solicitudId, r.fecha, r.proveedor, fmtItems(r.items||[]), r.obs||""])
+      ];
+      addSheet("Solicitudes", rowsSol);
+      addSheet("Recepciones", rowsRec);
+    } else {
+      alert("Exportación no disponible para esta sección.");
+      return;
     }
 
-    renderAll();
-    console.log("Interfaz renderizada");
-    goView("proveedores");
-    
-  } catch(err){
-    console.error("Error en startup:", err);
-    alert("Error al iniciar la aplicación: " + err.message);
+    const fileName = `Control_Publicidad_${view}_${catLabel}_${new Date().toISOString().slice(0,10)}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+
+  } catch (err){
+    console.error(err);
+    alert("Ocurrió un error generando el Excel.");
   }
-})
-();
+};
