@@ -1,4 +1,8 @@
 // ================== CONFIG ==================
+const LS_KEY = "publicidad_kardex_v1";
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbyPLjfhqme5YymJu0hQ5f0XCF2rsCfvLwIKZ3DlCpEyA_Q7oX-_bVpLizcf--CfHbqT/exec";
+const SHEETS_KEY = "1540"; // misma clave del Apps Script
+
 const items = [
   "AFICHES","VOLANTES","PENDONES","MINI PENDONES","PASACALLES",
   "VALLA IMPRESA","MURALES","MANILLAS DE SATIN","GORRAS ESTAMPADAS",
@@ -8,66 +12,143 @@ const items = [
 
 const proveedores = ["Proveedor 1","Proveedor 2","Proveedor 3","Proveedor 4","Proveedor 5"];
 const cats = ["conjunta","laura","gustavo"];
-const LS_KEY = "publicidad_kardex_v1";
-const SHEETS_URL = "https://script.google.com/macros/s/AKfycbx6xj6-PoyslYQWqOQ0Z9MreE5fbh-9DznEwAXYrkErCG1ODUVL5JcrW6zllsqiT6T4/exec";
-const SHEETS_KEY = "1540"; // misma clave del Apps Script
+
+// 🔴 ESTO SIEMPRE ARRIBA
+let db = {};
+
+// ================== FUNCIÓN CATNORM MEJORADA ==================
+function catNorm(v){
+  if(!v) return '';
+  const map = {
+    'conjunta': 'conjunta',
+    'laura': 'laura',
+    'gustavo': 'gustavo',
+    // Variaciones posibles
+    'Laura': 'laura',
+    'LAURA': 'laura',
+    'Gustavo': 'gustavo',
+    'GUSTAVO': 'gustavo',
+    'Conjunta': 'conjunta',
+    'CONJUNTA': 'conjunta'
+  };
+  
+  const key = String(v || '').trim();
+  return map[key] || key.toLowerCase();
+}
+
+// ================== NORMALIZAR DATOS EXISTENTES ==================
+function normalizeExistingData(){
+  if(!db.solicitudes || !db.recepciones || !db.entregas) return;
+  
+  console.log("Normalizando datos existentes...");
+  
+  // Normalizar solicitudes
+  db.solicitudes.forEach(s => {
+    if(s.categoria) s.categoria = catNorm(s.categoria);
+  });
+  
+  // Normalizar recepciones
+  db.recepciones.forEach(r => {
+    if(r.categoria) r.categoria = catNorm(r.categoria);
+  });
+  
+  // Normalizar entregas
+  db.entregas.forEach(e => {
+    if(e.categoria) e.categoria = catNorm(e.categoria);
+  });
+  
+  console.log("Datos normalizados correctamente");
+}
 
 function ensureDbShape(){
   db = db || {};
-
-  // colecciones principales
   db.solicitudes = Array.isArray(db.solicitudes) ? db.solicitudes : [];
   db.recepciones = Array.isArray(db.recepciones) ? db.recepciones : [];
   db.entregas    = Array.isArray(db.entregas)    ? db.entregas    : [];
   db.stock       = (db.stock && typeof db.stock === "object") ? db.stock : {};
 
-  // contadores autoincrementables
   db.counters = (db.counters && typeof db.counters === "object") ? db.counters : {};
   db.counters.SOL = Number(db.counters.SOL || 0);
   db.counters.REC = Number(db.counters.REC || 0);
   db.counters.ENT = Number(db.counters.ENT || 0);
 }
 
+// cargar desde localStorage (si existe)
+const raw = localStorage.getItem(LS_KEY);
+if (raw) {
+  try { db = JSON.parse(raw); } catch { db = {}; }
+}
+ensureDbShape();
+normalizeExistingData(); // Normalizar datos existentes al cargar
+
+// ================== FUNCIONES GOOGLE SHEETS ==================
 async function loadFromSheets(){
-  const url = `${SHEETS_URL}?key=${encodeURIComponent(SHEETS_KEY)}`;
-  const res = await fetch(url, { method: "GET" });
+  try {
+    const url = `${SHEETS_URL}?key=${encodeURIComponent(SHEETS_KEY)}`;
+    const res = await fetch(url, { method: "GET" });
 
-  if(!res.ok){
-    throw new Error(`HTTP ${res.status} al cargar Sheets`);
+    if(!res.ok){
+      throw new Error(`HTTP ${res.status} al cargar Sheets`);
+    }
+
+    const data = await res.json();
+    if(!data.ok){
+      throw new Error(data.error || "Error cargando Google Sheets");
+    }
+
+    // Carga db desde Sheets
+    db = data.db || {};
+
+    // Normaliza estructura
+    ensureDbShape();
+    normalizeExistingData();
+    
+    return data;
+  } catch (err) {
+    console.error("Error en loadFromSheets:", err);
+    throw err;
   }
-
-  const data = await res.json();
-  if(!data.ok){
-    throw new Error(data.error || "Error cargando Google Sheets");
-  }
-
-  // Carga db desde Sheets
-  db = data.db || {};
-
-  // Normaliza estructura (OBLIGATORIO)
-  ensureDbShape();
 }
 
-
+async function saveToSheets(){
+  try {
+    const res = await fetch(SHEETS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: SHEETS_KEY, db })
+    });
+    
+    if(!res.ok) {
+      throw new Error(`HTTP ${res.status} al guardar en Sheets`);
+    }
+    
+    const data = await res.json();
+    if(!data.ok) {
+      throw new Error(data.error || "Error guardando Google Sheets");
+    }
+    
+    // También guardar en localStorage como respaldo
+    localStorage.setItem(LS_KEY, JSON.stringify(db));
+    
+    return data;
+  } catch (err) {
+    console.error("Error en saveToSheets:", err);
+    // Guardar en localStorage como respaldo
+    localStorage.setItem(LS_KEY, JSON.stringify(db));
+    throw err;
+  }
+}
 
 document.getElementById("btnSync")?.addEventListener("click", async ()=>{
   try{
-    await loadFromSheets();   // carga + ensureDbShape()
-    renderAll();              // pinta la UI
+    await loadFromSheets();
+    renderAll();
     alert("Sincronizado con Google Sheets ✅");
   }catch(err){
     console.error(err);
     alert("Error sincronizando con Google Sheets:\n\n" + (err.message || err));
   }
 });
-
-// ================== STATE ==================
-let db = JSON.parse(localStorage.getItem(LS_KEY)) || {
-  counters: { SOL: 0, REC: 0, ENT: 0 },
-  solicitudes: [],   // {id,categoria,proveedor,fecha,items:[{item,cant}]}
-  recepciones: [],   // {id,solicitudId,categoria,proveedor,fecha,items:[{item,cant}],obs}
-  entregas: []       // {id,categoria,fecha,persona,obs,items:[{item,cant}]}
-};
 
 // carritos temporales
 let carritosRecepcion = { conjunta: [], laura: [], gustavo: [] };
@@ -90,16 +171,21 @@ function nextId(prefix){
 function getEl(id){
   return document.getElementById(id);
 }
-function catNorm(v){
-  return String(v || "").trim().toLowerCase(); // "CONJUNTA" => "conjunta"
-}
 
 // ================== INIT SELECTS ==================
 function fillBasicSelects(){
+  console.log("Inicializando selects...");
+  
   cats.forEach(cat=>{
     // proveedor selects
     const solProv = $(`solProv-${cat}`);
     const recProv = $(`recProv-${cat}`);
+    
+    if(!solProv || !recProv) {
+      console.error(`No se encontraron elementos para categoría: ${cat}`);
+      return;
+    }
+    
     [solProv, recProv].forEach(sel=>{
       sel.innerHTML = "";
       proveedores.forEach(p=>{
@@ -135,12 +221,15 @@ function fillBasicSelects(){
     $(`entItem-${cat}`).addEventListener("change", ()=> updateEntregaDisponible(cat));
     $(`entQty-${cat}`).addEventListener("input", ()=> updateEntregaDisponible(cat));
   });
+  
+  console.log("Selects inicializados correctamente");
 }
 
 // ================== COMPUTOS ==================
 function solicitadoPorCatItem(cat, item){
+  const catNormVal = catNorm(cat);
   let total = 0;
-  db.solicitudes.filter(s=>s.categoria===cat).forEach(s=>{
+  db.solicitudes.filter(s=>catNorm(s.categoria)===catNormVal).forEach(s=>{
     s.items.forEach(it=>{
       if(it.item===item) total += Number(it.cant||0);
     });
@@ -149,8 +238,9 @@ function solicitadoPorCatItem(cat, item){
 }
 
 function recibidoPorCatItem(cat, item){
+  const catNormVal = catNorm(cat);
   let total = 0;
-  db.recepciones.filter(r=>r.categoria===cat).forEach(r=>{
+  db.recepciones.filter(r=>catNorm(r.categoria)===catNormVal).forEach(r=>{
     r.items.forEach(it=>{
       if(it.item===item) total += Number(it.cant||0);
     });
@@ -159,8 +249,9 @@ function recibidoPorCatItem(cat, item){
 }
 
 function entregadoPorCatItem(cat, item){
+  const catNormVal = catNorm(cat);
   let total = 0;
-  db.entregas.filter(e=>e.categoria===cat).forEach(e=>{
+  db.entregas.filter(e=>catNorm(e.categoria)===catNormVal).forEach(e=>{
     e.items.forEach(it=>{
       if(it.item===item) total += Number(it.cant||0);
     });
@@ -210,7 +301,7 @@ window.goView = function(view){
 // ================== GUARDAR / SESION ==================
 window.guardarTodo = function(){
   localStorage.setItem(LS_KEY, JSON.stringify(db));
-  alert("Guardado ✅");
+  alert("Guardado en localStorage ✅");
 };
 
 window.cerrar = function(){
@@ -220,30 +311,62 @@ window.cerrar = function(){
 
 // ================== SOLICITUDES ==================
 window.crearSolicitud = async function(cat){
-  const proveedor = $(`solProv-${cat}`).value;
-  const fecha = ($(`solFecha-${cat}`).value || "").trim();
+  console.log("Crear solicitud para categoría:", cat);
+  
+  const provSelect = $(`solProv-${cat}`);
+  const fechaInput = $(`solFecha-${cat}`);
+  
+  if(!provSelect || !fechaInput) {
+    alert(`Error: No se encontraron los elementos para la categoría ${cat}`);
+    return;
+  }
+  
+  const proveedor = provSelect.value;
+  const fecha = (fechaInput.value || "").trim();
 
   if(!fecha){
     alert("Selecciona la fecha de solicitud.");
+    fechaInput.focus();
     return;
   }
 
-  const id = nextId("SOL");
-  db.solicitudes.push({
-    id,
-    categoria: cat,
-    proveedor,
-    fecha,
-    items: []
-  });
+  if(!proveedor){
+    alert("Selecciona un proveedor.");
+    provSelect.focus();
+    return;
+  }
 
-  // seleccionar recién creada
-  await saveToSheets();
-  renderAll();
-  $(`solSelect-${cat}`).value = id;
-  $(`recSol-${cat}`).value = id;
-  syncRecProveedorDesdeSolicitud(cat);
-  refreshRecItemsPendientes(cat);
+  try {
+    const id = nextId("SOL");
+    db.solicitudes.push({
+      id,
+      categoria: catNorm(cat), // NORMALIZAR AL GUARDAR
+      proveedor,
+      fecha,
+      items: []
+    });
+
+    console.log(`Solicitud ${id} creada`);
+    
+    // Guardar primero
+    await saveToSheets();
+    
+    // Luego renderizar y actualizar selects
+    renderAll();
+    
+    // Establecer la solicitud recién creada como seleccionada
+    $(`solSelect-${cat}`).value = id;
+    $(`recSol-${cat}`).value = id;
+    
+    syncRecProveedorDesdeSolicitud(cat);
+    refreshRecItemsPendientes(cat);
+    
+    alert(`Solicitud ${id} creada exitosamente.`);
+    
+  } catch (error) {
+    console.error("Error al crear solicitud:", error);
+    alert("Error al crear la solicitud: " + error.message);
+  }
 };
 
 window.agregarItemSolicitud = async function(cat){
@@ -367,7 +490,6 @@ window.agregarItemRecepcion = async function(cat){
 
 function renderCarritoRecepcion(cat){
   // no tabla dedicada; se refleja al guardar en el listado de recepciones.
-  // (si quieres, luego lo muestro en tabla. Por ahora, controlamos con alert.)
 }
 
 window.guardarRecepcion = async function(cat){
@@ -408,7 +530,7 @@ window.guardarRecepcion = async function(cat){
   db.recepciones.push({
     id,
     solicitudId: solId,
-    categoria: cat,
+    categoria: catNorm(cat), // NORMALIZAR AL GUARDAR
     proveedor,
     fecha,
     items: carrito.map(x=>({ item: x.item, cant: x.cant })),
@@ -426,8 +548,9 @@ window.guardarRecepcion = async function(cat){
   renderAll();
 };
 
-window.delRecepcion = function(recId){
+window.delRecepcion = async function(recId){
   db.recepciones = db.recepciones.filter(r=>r.id!==recId);
+  await saveToSheets();
   renderAll();
 };
 
@@ -522,7 +645,7 @@ window.guardarEntrega = async function(cat){
   const id = nextId("ENT");
   db.entregas.push({
     id,
-    categoria: cat,
+    categoria: catNorm(cat), // NORMALIZAR AL GUARDAR
     fecha,
     persona,
     obs,
@@ -536,7 +659,7 @@ window.guardarEntrega = async function(cat){
   $(`entObs-${cat}`).value = "";
   $(`entQty-${cat}`).value = 1;
 
-  await saveToSheets();   // ✅ AQUÍ
+  await saveToSheets();
   renderAll();
 };
 
@@ -569,7 +692,8 @@ function renderSelectSolicitudes(cat){
   const solSel = $(`solSelect-${cat}`);
   const recSel = $(`recSol-${cat}`);
 
-  const sols = db.solicitudes.filter(s=>s.categoria===cat);
+  const catNormVal = catNorm(cat);
+  const sols = db.solicitudes.filter(s=>catNorm(s.categoria)===catNormVal);
 
   solSel.innerHTML = "";
   recSel.innerHTML = "";
@@ -605,7 +729,8 @@ function renderSolicitudes(cat){
   const tbody = $(`bodySolicitudes-${cat}`);
   tbody.innerHTML = "";
 
-  const arr = db.solicitudes.filter(s=>s.categoria===cat).slice().reverse();
+  const catNormVal = catNorm(cat);
+  const arr = db.solicitudes.filter(s=>catNorm(s.categoria)===catNormVal).slice().reverse();
 
   if(arr.length === 0){
     tbody.innerHTML = `<tr><td colspan="5" class="text-muted">Sin solicitudes</td></tr>`;
@@ -631,7 +756,8 @@ function renderRecepciones(cat){
   const tbody = $(`bodyRecepciones-${cat}`);
   tbody.innerHTML = "";
 
-  const arr = db.recepciones.filter(r=>r.categoria===cat).slice().reverse();
+  const catNormVal = catNorm(cat);
+  const arr = db.recepciones.filter(r=>catNorm(r.categoria)===catNormVal).slice().reverse();
 
   if(arr.length === 0){
     tbody.innerHTML = `<tr><td colspan="7" class="text-muted">Sin recepciones</td></tr>`;
@@ -659,7 +785,8 @@ function renderEntregas(cat){
   const tbody = $(`bodyEntregas-${cat}`);
   tbody.innerHTML = "";
 
-  const arr = db.entregas.filter(e=>e.categoria===cat).slice().reverse();
+  const catNormVal = catNorm(cat);
+  const arr = db.entregas.filter(e=>catNorm(e.categoria)===catNormVal).slice().reverse();
 
   if(arr.length === 0){
     tbody.innerHTML = `<tr><td colspan="6" class="text-muted">Sin entregas</td></tr>`;
@@ -702,13 +829,13 @@ function renderDashboard(){
   const sumObjItems = (itemsArr)=> itemsArr.reduce((a,it)=>a + (Number(it.cant)||0), 0);
 
   const totalSolicitadoCat = (cat) =>
-    db.solicitudes.filter(s=>s.categoria===cat).reduce((acc,s)=>acc + sumObjItems(s.items), 0);
+    db.solicitudes.filter(s=>catNorm(s.categoria)===catNorm(cat)).reduce((acc,s)=>acc + sumObjItems(s.items), 0);
 
   const totalRecibidoCat = (cat) =>
-    db.recepciones.filter(r=>r.categoria===cat).reduce((acc,r)=>acc + sumObjItems(r.items), 0);
+    db.recepciones.filter(r=>catNorm(r.categoria)===catNorm(cat)).reduce((acc,r)=>acc + sumObjItems(r.items), 0);
 
   const totalEntregadoCat = (cat) =>
-    db.entregas.filter(e=>e.categoria===cat).reduce((acc,e)=>acc + sumObjItems(e.items), 0);
+    db.entregas.filter(e=>catNorm(e.categoria)===catNorm(cat)).reduce((acc,e)=>acc + sumObjItems(e.items), 0);
 
   const totalStockCat = (cat) => {
     let t = 0;
@@ -796,8 +923,9 @@ function renderDashboardProveedorDropdown(){
 }
 
 function recibidoPorProveedorCatItem(prov, cat, item){
+  const catNormVal = catNorm(cat);
   return db.recepciones
-    .filter(r=>r.proveedor===prov && r.categoria===cat)
+    .filter(r=>r.proveedor===prov && catNorm(r.categoria)===catNormVal)
     .reduce((acc,r)=>{
       const it = r.items.find(x=>x.item===item);
       return acc + (it ? (Number(it.cant)||0) : 0);
@@ -830,140 +958,9 @@ function renderDashboardProveedorDetail(prov){
   }
 }
 
-window.editSolicitud = async function(solId){
-  const sol = db.solicitudes.find(s=>s.id===solId);
-  if(!sol) return alert("Solicitud no encontrada.");
-
-  const newProv = prompt("Proveedor:", sol.proveedor);
-  if(newProv === null) return;
-
-  const newFecha = prompt("Fecha (YYYY-MM-DD):", sol.fecha);
-  if(newFecha === null) return;
-
-  // editar cantidades por item
-  const updatedItems = [];
-  for(const it of sol.items){
-    const recibido = recibidoPorSolicitudItem(solId, it.item);
-    const val = prompt(`Cantidad solicitada para ${it.item} (mínimo recibido: ${recibido})`, String(it.cant));
-    if(val === null) return; // cancelar todo
-    const n = Number(val);
-    if(!Number.isFinite(n) || n < recibido){
-      return alert(`Valor inválido. Para ${it.item} no puedes ser menor que lo recibido (${recibido}).`);
-    }
-    if(n > 0) updatedItems.push({ item: it.item, cant: n });
-  }
-
-  sol.proveedor = newProv.trim() || sol.proveedor;
-  sol.fecha = newFecha.trim() || sol.fecha;
-  sol.items = updatedItems;
-
-  await saveToSheets();
-  renderAll();
-};
-
-window.editRecepcion = async function(recId){
-  const rec = db.recepciones.find(r=>r.id===recId);
-  if(!rec) return alert("Recepción no encontrada.");
-
-  const solId = rec.solicitudId;
-  const sol = db.solicitudes.find(s=>s.id===solId);
-  if(!sol) return alert("La solicitud asociada no existe.");
-
-  const newFecha = prompt("Fecha de recepción (YYYY-MM-DD):", rec.fecha);
-  if(newFecha === null) return;
-  if(!newFecha.trim()) return alert("La fecha es obligatoria.");
-
-  const newProv = prompt("Proveedor:", rec.proveedor);
-  if(newProv === null) return;
-
-  const newObs = prompt("Observaciones:", rec.obs || "");
-  if(newObs === null) return;
-
-  // Para validar: recibido total por solicitud+item excluyendo esta recepción
-  function recibidoExcluyendo(item){
-    let total = 0;
-    db.recepciones
-      .filter(r=>r.solicitudId===solId && r.id!==recId)
-      .forEach(r=>{
-        r.items.forEach(it=>{
-          if(it.item===item) total += Number(it.cant||0);
-        });
-      });
-    return total;
-  }
-
-  const updatedItems = [];
-  for(const it of rec.items){
-    const solicitado = solicitadoEnSolicitudItem(solId, it.item);
-    const recibidoOtros = recibidoExcluyendo(it.item);
-    const maxPermitido = Math.max(0, solicitado - recibidoOtros);
-
-    const val = prompt(`Cantidad recibida para ${it.item} (máx permitido: ${maxPermitido})`, String(it.cant));
-    if(val === null) return;
-    const n = Number(val);
-
-    if(!Number.isFinite(n) || n < 0 || n > maxPermitido){
-      return alert(`Valor inválido. Para ${it.item} no puede superar ${maxPermitido}.`);
-    }
-    if(n > 0) updatedItems.push({ item: it.item, cant: n });
-  }
-
-  rec.fecha = newFecha.trim();
-  rec.proveedor = newProv.trim() || rec.proveedor;
-  rec.obs = newObs.trim();
-  rec.items = updatedItems;
-
-  await saveToSheets();
-  renderAll();
-};
-
-window.editEntrega = async function(entId){
-  const ent = db.entregas.find(e=>e.id===entId);
-  if(!ent) return alert("Entrega no encontrada.");
-
-  const cat = ent.categoria;
-
-  const newPersona = prompt("Persona:", ent.persona);
-  if(newPersona === null) return;
-  if(!newPersona.trim()) return alert("Persona es obligatoria.");
-
-  const newFecha = prompt("Fecha (YYYY-MM-DD):", ent.fecha);
-  if(newFecha === null) return;
-  if(!newFecha.trim()) return alert("La fecha es obligatoria.");
-
-  const newObs = prompt("Observación:", ent.obs || "");
-  if(newObs === null) return;
-
-  // stock disponible para editar: stock actual + lo que esta entrega ya había consumido en ese item
-  const updatedItems = [];
-  for(const it of ent.items){
-    const stockActual = stockPorCatItem(cat, it.item);
-    const disponibleParaEditar = stockActual + Number(it.cant||0);
-
-    const val = prompt(`Cantidad entregada para ${it.item} (disponible para editar: ${disponibleParaEditar})`, String(it.cant));
-    if(val === null) return;
-    const n = Number(val);
-
-    if(!Number.isFinite(n) || n < 0 || n > disponibleParaEditar){
-      return alert(`Valor inválido. Para ${it.item} no puede superar ${disponibleParaEditar}.`);
-    }
-    if(n > 0) updatedItems.push({ item: it.item, cant: n });
-  }
-
-  ent.persona = newPersona.trim();
-  ent.fecha = newFecha.trim();
-  ent.obs = newObs.trim();
-  ent.items = updatedItems;
-
-  await saveToSheets();
-  renderAll();
-};
-
 // ===== Modal helpers =====
 let editModalInstance = null;
-let editContext = null; // { type: 'solicitud'|'recepcion'|'entrega', id: '...', categoria: '...' }
-
-function $(id){ return document.getElementById(id); }
+let editContext = null;
 
 function showEditError(msg){
   const a = $("editModalAlert");
@@ -994,7 +991,6 @@ function buildItemMap(itemsArr){
   return m;
 }
 
-// Crea la tabla de items con inputs y límites por fila
 function renderEditItemsTable({ valueMap, limitMap, noteMap }){
   const tbody = $("editItemsBody");
   tbody.innerHTML = "";
@@ -1047,7 +1043,7 @@ function openEditModal({ type, id }){
   // UI toggles
   $("editPersonaWrap").style.display = (type === "entrega") ? "" : "none";
   $("editObsWrap").style.display = (type === "recepcion" || type === "entrega") ? "" : "none";
-  $("editProveedor").disabled = (type === "entrega"); // entrega a personas NO depende del proveedor
+  $("editProveedor").disabled = (type === "entrega");
   $("editProveedorHelp").textContent = (type === "entrega")
     ? "En entregas a personas no aplica proveedor."
     : "";
@@ -1106,7 +1102,6 @@ function openEditModal({ type, id }){
       return total;
     }
 
-    // límites: máximo = solicitado - recibidoOtros
     const limitMap = {};
     const noteMap = {};
     items.forEach(item=>{
@@ -1130,7 +1125,6 @@ function openEditModal({ type, id }){
     if(!ent) return alert("Entrega no encontrada.");
 
     $("editModalTitle").textContent = `Editar Entrega ${ent.id} (${ent.categoria.toUpperCase()})`;
-    // proveedor deshabilitado
     fillProveedorSelect(proveedores[0] || "Proveedor 1");
     $("editFecha").value = ent.fecha || "";
     $("editPersona").value = ent.persona || "";
@@ -1138,7 +1132,6 @@ function openEditModal({ type, id }){
 
     const current = buildItemMap(ent.items);
 
-    // límites: máximo = stock actual + lo que ya tenía esta entrega
     const limitMap = {};
     const noteMap = {};
     items.forEach(item=>{
@@ -1161,7 +1154,7 @@ function openEditModal({ type, id }){
   editModalInstance.show();
 }
 
-// ===== Save handlers (validaciones fuertes) =====
+// ===== Save handlers =====
 async function saveEditSolicitud(solId){
   clearEditError();
   const sol = db.solicitudes.find(s=>s.id===solId);
@@ -1174,7 +1167,6 @@ async function saveEditSolicitud(solId){
   const read = readModalItems();
   if(read.error) return showEditError(read.error);
 
-  // Validar mínimos por recibido
   for(const item of items){
     const rec = recibidoPorSolicitudItem(solId, item);
     const entered = (read.items.find(x=>x.item===item)?.cant) || 0;
@@ -1221,7 +1213,6 @@ async function saveEditRecepcion(recId){
   const read = readModalItems();
   if(read.error) return showEditError(read.error);
 
-  // Validar máximos
   for(const item of items){
     const solicitado = solicitadoEnSolicitudItem(solId, item);
     const recibidoOtros = recibidoExcluyendo(item);
@@ -1261,7 +1252,6 @@ async function saveEditEntrega(entId){
   const read = readModalItems();
   if(read.error) return showEditError(read.error);
 
-  // Validar contra stock editable
   for(const item of items){
     const stock = stockPorCatItem(ent.categoria, item);
     const actual = current[item] ?? 0;
@@ -1284,30 +1274,48 @@ async function saveEditEntrega(entId){
   renderAll();
 }
 
-// ===== Exponer funciones editar para botones =====
+// ===== Exponer funciones editar =====
 window.editSolicitud = (id) => openEditModal({ type:"solicitud", id });
 window.editRecepcion = (id) => openEditModal({ type:"recepcion", id });
 window.editEntrega  = (id) => openEditModal({ type:"entrega", id });
 
 // ================== STARTUP ==================
 (async function startup(){
-  try{
-    fillBasicSelects();
-
-    await loadFromSheets();  // <-- trae la BD “viva”
-    renderAll();
-    goView("proveedores");
-  } catch(err){
-    console.error(err);
-    alert("No pude cargar desde Google Sheets.\n\n" + err.message);
-
-    // fallback opcional: usar localStorage si Sheets falla
-    const raw = localStorage.getItem(LS_KEY);
-    if(raw){
-      db = JSON.parse(raw);
-      renderAll();
-      goView("proveedores");
+  console.log("Iniciando aplicación...");
+  
+  try {
+    // Verificar que estamos en la página correcta
+    if(!document.getElementById('solProv-conjunta')) {
+      console.error("Elementos del DOM no encontrados");
+      return;
     }
+    
+    fillBasicSelects();
+    console.log("Selects llenados");
+
+    // Intentar cargar desde Sheets
+    try {
+      await loadFromSheets();
+      console.log("Datos cargados desde Sheets");
+    } catch(sheetsError) {
+      console.warn("No se pudo cargar desde Sheets:", sheetsError);
+      // Cargar desde localStorage
+      const raw = localStorage.getItem(LS_KEY);
+      if(raw){
+        db = JSON.parse(raw);
+        ensureDbShape();
+        normalizeExistingData();
+        console.log("Datos cargados desde localStorage");
+      }
+    }
+
+    renderAll();
+    console.log("Interfaz renderizada");
+    goView("proveedores");
+    
+  } catch(err){
+    console.error("Error en startup:", err);
+    alert("Error al iniciar la aplicación: " + err.message);
   }
 })
 ();
