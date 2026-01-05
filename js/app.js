@@ -6,7 +6,8 @@ const items = [
   "PENDÓN TARJETÓN","STICKERS","MICROPERFORADOS"
 ];
 
-const proveedores = ["Digiprint","Muelle Publicidad ","Bordados Barranquilla", "Caratos"];
+const proveedores = ["Digiprint","Muelle Publicidad ","Bordados Barranquilla","estampado y publicidad",
+                    "Caratos"];
 const cats = ["conjunta","laura","gustavo"];
 const LS_KEY = "publicidad_kardex_v1";
 
