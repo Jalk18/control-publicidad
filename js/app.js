@@ -2,14 +2,126 @@
 const items = [
   "AFICHES","VOLANTES","PENDONES","MINI PENDONES","PASACALLES",
   "VALLA IMPRESA","MURALES","MANILLAS DE SATIN","GORRAS ESTAMPADAS",
-  "CAMISETAS BORDADAS","CAMISETAS ESTAMPADAS", "TARJETAS DOBLE CARA",
-  "TARJETÓN PEDAGÓGICO","PENDÓN TARJETÓN","STICKERS","MICROPERFORADOS", 
-  "ROLL UP"
+  "CAMISETAS","TARJETAS DOBLE CARA","TARJETÓN PEDAGÓGICO",
+  "PENDÓN TARJETÓN","STICKERS","MICROPERFORADOS"
 ];
 
-const proveedores = ["Digiprint","Muelle Publicidad ","Bordados Barranquilla"];
+const proveedores = ["Digiprint","Muelle Publicidad ","Bordados Barranquilla", "Caratos"];
 const cats = ["conjunta","laura","gustavo"];
 const LS_KEY = "publicidad_kardex_v1";
+
+// ================== UI STATE (buscadores/paginación) ==================
+// Se mantiene en memoria para conservar página/filtro incluso tras editar/eliminar.
+const uiState = {
+  search: {}, // key -> term
+  page: {}    // key -> current page (1-based)
+};
+
+function uiKey(type, cat){
+  return `${type}-${cat}`;
+}
+
+function getSearchTerm(key){
+  return String(uiState.search[key] || "").trim().toLowerCase();
+}
+
+function getPage(key){
+  const p = Number(uiState.page[key] || 1);
+  return isFinite(p) && p > 0 ? Math.floor(p) : 1;
+}
+
+function setPage(key, page){
+  uiState.page[key] = Math.max(1, Number(page) || 1);
+}
+
+function attachSearchAndPager({ type, cat, searchInputId, pagerId, pageSize }){
+  const key = uiKey(type, cat);
+  // defaults
+  if(uiState.search[key] === undefined) uiState.search[key] = "";
+  if(uiState.page[key] === undefined) uiState.page[key] = 1;
+
+  const inp = document.getElementById(searchInputId);
+  if(inp && !inp.dataset.bound){
+    inp.value = uiState.search[key] || "";
+    inp.addEventListener("input", ()=>{
+      uiState.search[key] = inp.value;
+      setPage(key, 1);
+      // re-render sección específica
+      if(type === "solicitudes") renderSolicitudes(cat);
+      if(type === "recepciones") renderRecepciones(cat);
+      if(type === "entregas") renderEntregas(cat);
+    });
+    inp.dataset.bound = "1";
+  }
+
+  // guardar referencias para renderPager
+  const pagerEl = document.getElementById(pagerId);
+  if(pagerEl){
+    pagerEl.dataset.key = key;
+    pagerEl.dataset.type = type;
+    pagerEl.dataset.cat = cat;
+    pagerEl.dataset.pageSize = String(pageSize);
+  }
+}
+
+function paginateAndFilter(arr, { key, pageSize, matches }){
+  const term = getSearchTerm(key);
+  const filtered = term
+    ? arr.filter(row => matches(row, term))
+    : arr.slice();
+
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  let page = getPage(key);
+  if(page > totalPages) page = totalPages;
+  setPage(key, page);
+
+  const start = (page - 1) * pageSize;
+  const pageItems = filtered.slice(start, start + pageSize);
+  return { pageItems, total, totalPages, page, term };
+}
+
+function renderPager(pagerId, { key, page, totalPages, onPageChange }){
+  const ul = document.getElementById(pagerId);
+  if(!ul) return;
+
+  // limpiar
+  ul.innerHTML = "";
+  if(totalPages <= 1) return;
+
+  const mkItem = (label, targetPage, disabled=false, active=false)=>{
+    const li = document.createElement("li");
+    li.className = `page-item${disabled ? " disabled" : ""}${active ? " active" : ""}`;
+    const a = document.createElement("a");
+    a.className = "page-link";
+    a.href = "#";
+    a.textContent = label;
+    a.addEventListener("click", (e)=>{
+      e.preventDefault();
+      if(disabled) return;
+      onPageChange(targetPage);
+    });
+    li.appendChild(a);
+    return li;
+  };
+
+  ul.appendChild(mkItem("«", page - 1, page <= 1));
+
+  // ventana de páginas (máx 7 botones)
+  const windowSize = 7;
+  let start = Math.max(1, page - Math.floor(windowSize/2));
+  let end = start + windowSize - 1;
+  if(end > totalPages){
+    end = totalPages;
+    start = Math.max(1, end - windowSize + 1);
+  }
+
+  for(let p = start; p <= end; p++){
+    ul.appendChild(mkItem(String(p), p, false, p === page));
+  }
+
+  ul.appendChild(mkItem("»", page + 1, page >= totalPages));
+}
 
 // ================== STATE ==================
 let db = JSON.parse(localStorage.getItem(LS_KEY)) || {
@@ -533,6 +645,37 @@ function renderAll(){
   localStorage.setItem(LS_KEY, JSON.stringify(db));
 }
 
+function initListControls(){
+  // Proveedores -> Solicitudes / Recepciones (10 por página)
+  cats.forEach(cat=>{
+    attachSearchAndPager({
+      type: "solicitudes",
+      cat,
+      searchInputId: `searchSolicitudes-${cat}`,
+      pagerId: `pagerSolicitudes-${cat}`,
+      pageSize: 10
+    });
+    attachSearchAndPager({
+      type: "recepciones",
+      cat,
+      searchInputId: `searchRecepciones-${cat}`,
+      pagerId: `pagerRecepciones-${cat}`,
+      pageSize: 10
+    });
+  });
+
+  // Entregas -> (15 por página)
+  cats.forEach(cat=>{
+    attachSearchAndPager({
+      type: "entregas",
+      cat,
+      searchInputId: `searchEntregas-${cat}`,
+      pagerId: `pagerEntregas-${cat}`,
+      pageSize: 15
+    });
+  });
+}
+
 function renderSelectSolicitudes(cat){
   const solSel = $(`solSelect-${cat}`);
   const recSel = $(`recSol-${cat}`);
@@ -573,14 +716,29 @@ function renderSolicitudes(cat){
   const tbody = $(`bodySolicitudes-${cat}`);
   tbody.innerHTML = "";
 
+  const key = uiKey("solicitudes", cat);
   const arr = db.solicitudes.filter(s=>s.categoria===cat).slice().reverse();
 
-  if(arr.length === 0){
+  const { pageItems, total, totalPages, page } = paginateAndFilter(arr, {
+    key,
+    pageSize: 10,
+    matches: (s, term) => String(s.proveedor||"").toLowerCase().includes(term)
+  });
+
+  // paginador
+  renderPager(`pagerSolicitudes-${cat}`, {
+    key,
+    page,
+    totalPages,
+    onPageChange: (p)=>{ setPage(key, p); renderSolicitudes(cat); }
+  });
+
+  if(total === 0){
     tbody.innerHTML = `<tr><td colspan="5" class="text-muted">Sin solicitudes</td></tr>`;
     return;
   }
 
-  arr.forEach(s=>{
+  pageItems.forEach(s=>{
     tbody.innerHTML += `
       <tr>
         <td><b>${s.id}</b></td>
@@ -589,8 +747,8 @@ function renderSolicitudes(cat){
         <td class="text-start">${fmtItems(s.items)}</td>
         <td>
           <div class="d-flex justify-content-center gap-1 flex-wrap">
-            <button class="btn btn-sm btn-warning" onclick="editSolicitud('${s.id}')">Editar</button>
-            <button class="btn btn-sm btn-danger" onclick="confirmDelSolicitud('${s.id}')">Eliminar</button>
+            <button class="btn btn-sm btn-warning" onclick="editSolicitud('${s.id}')"><i class="fa-solid fa-pencil"></i></button>
+            <button class="btn btn-sm btn-danger" onclick="confirmDelSolicitud('${s.id}')"><i class="fa-solid fa-trash"></i></button>
           </div>
         </td>
       </tr>
@@ -602,14 +760,28 @@ function renderRecepciones(cat){
   const tbody = $(`bodyRecepciones-${cat}`);
   tbody.innerHTML = "";
 
+  const key = uiKey("recepciones", cat);
   const arr = db.recepciones.filter(r=>r.categoria===cat).slice().reverse();
 
-  if(arr.length === 0){
+  const { pageItems, total, totalPages, page } = paginateAndFilter(arr, {
+    key,
+    pageSize: 10,
+    matches: (r, term) => String(r.proveedor||"").toLowerCase().includes(term)
+  });
+
+  renderPager(`pagerRecepciones-${cat}`, {
+    key,
+    page,
+    totalPages,
+    onPageChange: (p)=>{ setPage(key, p); renderRecepciones(cat); }
+  });
+
+  if(total === 0){
     tbody.innerHTML = `<tr><td colspan="7" class="text-muted">Sin recepciones</td></tr>`;
     return;
   }
 
-  arr.forEach(r=>{
+  pageItems.forEach(r=>{
     tbody.innerHTML += `
       <tr>
         <td><b>${r.id}</b></td>
@@ -620,8 +792,8 @@ function renderRecepciones(cat){
         <td class="text-start">${r.obs || ""}</td>
         <td>
           <div class="d-flex justify-content-center gap-1 flex-wrap">
-            <button class="btn btn-sm btn-warning" onclick="editRecepcion('${r.id}')">Editar</button>
-            <button class="btn btn-sm btn-danger" onclick="confirmDelRecepcion('${r.id}')">Eliminar</button>
+            <button class="btn btn-sm btn-warning" onclick="editRecepcion('${r.id}')"><i class="fa-solid fa-pencil"></i></button>
+            <button class="btn btn-sm btn-danger" onclick="confirmDelRecepcion('${r.id}')"><i class="fa-solid fa-trash"></i></button>
           </div>
         </td>
       </tr>
@@ -633,14 +805,33 @@ function renderEntregas(cat){
   const tbody = $(`bodyEntregas-${cat}`);
   tbody.innerHTML = "";
 
+  const key = uiKey("entregas", cat);
   const arr = db.entregas.filter(e=>e.categoria===cat).slice().reverse();
 
-  if(arr.length === 0){
+  const { pageItems, total, totalPages, page } = paginateAndFilter(arr, {
+    key,
+    pageSize: 15,
+    matches: (e, term) => {
+      const persona = String(e.persona||"").toLowerCase();
+      const obs = String(e.obs||"").toLowerCase();
+      const its = fmtItems(e.items||[]).toLowerCase();
+      return persona.includes(term) || its.includes(term) || obs.includes(term);
+    }
+  });
+
+  renderPager(`pagerEntregas-${cat}`, {
+    key,
+    page,
+    totalPages,
+    onPageChange: (p)=>{ setPage(key, p); renderEntregas(cat); }
+  });
+
+  if(total === 0){
     tbody.innerHTML = `<tr><td colspan="7" class="text-muted">Sin entregas</td></tr>`;
     return;
   }
 
-  arr.forEach(e=>{
+  pageItems.forEach(e=>{
     tbody.innerHTML += `
       <tr>
         <td><b>${e.id}</b></td>
@@ -651,8 +842,8 @@ function renderEntregas(cat){
         <td class="text-start">${e.obs || ""}</td>
         <td>
           <div class="d-flex justify-content-center gap-1 flex-wrap">
-            <button class="btn btn-sm btn-warning" onclick="editEntrega('${e.id}')">Editar</button>
-            <button class="btn btn-sm btn-danger" onclick="confirmDelEntrega('${e.id}')">Eliminar</button>
+            <button class="btn btn-sm btn-warning" onclick="editEntrega('${e.id}')"><i class="fa-solid fa-pencil"></i></button>
+            <button class="btn btn-sm btn-danger" onclick="confirmDelEntrega('${e.id}')"><i class="fa-solid fa-trash"></i></button>
           </div>
         </td>
       </tr>
@@ -1275,6 +1466,7 @@ window.editEntrega  = (id) => openEditModal({ type:"entrega", id });
 
 // ================== STARTUP ==================
 fillBasicSelects();
+initListControls();
 renderAll();
 goView("proveedores");
 

@@ -5,6 +5,7 @@
   <title>Control de Publicidad</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
+  <script src="https://kit.fontawesome.com/419f97d44b.js" crossorigin="anonymous"></script>
 </head>
 <body class="bg-light">
 
@@ -12,19 +13,19 @@
 if(localStorage.getItem("login") !== "ok"){ window.location.href = "index.html"; }
 </script>
 
-<nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm px-3">
-  <a class="navbar-brand fw-bold" href="#">CONTROL PUBLICIDAD</a>
+<nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm px-3 fixed-top">
+  <a class="navbar-brand fw-bold text-primary" href="#"><i class="fa-solid fa-bullhorn"></i></i>CONTROL PUBLICIDAD</a>
 
   <div class="ms-auto d-flex align-items-center gap-2">
-    <button class="btn btn-outline-primary" onclick="goView('proveedores')">Publicidad con proveedores</button>
-    <button class="btn btn-outline-primary" onclick="goView('entregas')">Publicidad entregada</button>
-    <button class="btn btn-outline-primary" onclick="goView('stock')">Stock</button>
-    <button class="btn btn-outline-primary" onclick="goView('dashboard')">Dashboard</button>
+    <button class="btn btn-outline-primary btn-sm" onclick="goView('proveedores')"><i class="fa-regular fa-truck"></i> Proveedores</button>
+    <button class="btn btn-outline-primary btn-sm" onclick="goView('entregas')"><i class="fa-solid fa-box"></i> Entregas</button>
+    <button class="btn btn-outline-primary btn-sm" onclick="goView('stock')"><i class="fa-solid fa-boxes-stacked"></i> Stock</button>
+    <button class="btn btn-outline-primary btn-sm" onclick="goView('dashboard')"><i class="fa-regular fa-chart-bar"></i> Dashboard</button>
 
-    <button class="btn btn-success ms-2" onclick="guardarTodo()">Guardar</button>
-    <button class="btn btn-outline-success" onclick="backupDB()">Respaldo</button>
-    <button class="btn btn-outline-warning" onclick="triggerRestore()">Restaurar</button>
-    <button class="btn btn-secondary" onclick="cerrar()">Cerrar Sesión</button>
+
+    <button class="btn btn-outline-success btn-sm" onclick="backupDB()">Respaldo</button>
+    <button class="btn btn-outline-warning btn-sm" onclick="triggerRestore()">Restaurar</button>
+    <button class="btn btn-secondary btn-sm" onclick="cerrar()"><i class="fa-solid fa-power-off"></i></button>
   </div>
 </nav>
 
@@ -35,65 +36,78 @@ if(localStorage.getItem("login") !== "ok"){ window.location.href = "index.html";
 
   <!-- ===================== PROVEEDORES ===================== -->
   <section id="view-proveedores">
-    <h3 class="mb-3">Publicidad con proveedores</h3>
+    <h3 class="mb-3"><i class="fa-regular fa-truck"></i> Publicidad con proveedores</h3>
 
-    <ul class="nav nav-tabs">
-      <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#prov-conjunta">Conjunta</button></li>
-      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#prov-laura">Laura</button></li>
-      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#prov-gustavo">Gustavo</button></li>
+    <ul class="nav nav-tabs" id="proveedoresTab" role="tablist">
+      <li class="nav-item" role="presentation"><button class="nav-link active" id="conjunta-tab" data-bs-toggle="tab" data-bs-target="#prov-conjunta" type="button" role="tab">Conjunta</button></li>
+      <li class="nav-item" role="presentation"><button class="nav-link" id="laura-tab" data-bs-toggle="tab" data-bs-target="#prov-laura" type="button" role="tab">Laura</button></li>
+      <li class="nav-item" role="presentation"><button class="nav-link" id="gustavo-tab" data-bs-toggle="tab" data-bs-target="#prov-gustavo" type="button" role="tab">Gustavo</button></li>
     </ul>
 
     <div class="tab-content bg-white border border-top-0 p-3 rounded-bottom shadow-sm">
       <!-- -------- CONJUNTA -------- -->
-      <div class="tab-pane fade show active" id="prov-conjunta">
+      <div class="tab-pane fade show active" id="prov-conjunta" role="tabpanel">
         <div class="d-flex justify-content-end mb-2">
           <button class="btn btn-outline-success btn-sm" onclick="downloadExcel('proveedores','conjunta')">Descargar Excel</button>
         </div>
-        <div class="row g-3">
+        <div class="row g-3 mb-3">
           <div class="col-lg-6">
-            <div class="card p-3 shadow-sm">
-              <h5 class="mb-3">Nueva Solicitud (Conjunta)</h5>
-              <div class="row g-2">
-                <div class="col-md-4">
-                  <label class="form-label">Proveedor</label>
-                  <select id="solProv-conjunta" class="form-select"></select>
-                </div>
-                <div class="col-md-4">
-                  <label class="form-label">Fecha solicitud</label>
-                  <input id="solFecha-conjunta" type="date" class="form-control">
-                </div>
-                <div class="col-md-4 d-grid align-items-end">
-                  <button class="btn btn-primary mt-4" onclick="crearSolicitud('conjunta')">Crear Solicitud</button>
-                </div>
+            <div class="card border-primary shadow-sm">
+              <div class="card-header bg-primary text-white">
+                <h5 class="mb-3">Nueva Solicitud (Conjunta)</h5>
               </div>
+              <div class="card-body">
+                <div class="row g-2">
+                  <div class="col-md-4">
+                    <label class="form-label">Proveedor</label>
+                    <select id="solProv-conjunta" class="form-select form-select-sm"></select>
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label">Fecha solicitud</label>
+                    <input id="solFecha-conjunta" type="date" class="form-control form-control-sm">
+                  </div>
+                  <div class="col-md-4 d-grid align-items-end">
+                    <button class="btn btn-primary mt-4" onclick="crearSolicitud('conjunta')">Crear Solicitud</button>
+                  </div>
+                </div>
 
-              <hr>
-              <h6>Agregar ítems a la solicitud creada</h6>
-              <div class="row g-2 align-items-end">
-                <div class="col-md-4">
-                  <label class="form-label">Solicitud</label>
-                  <select id="solSelect-conjunta" class="form-select"></select>
+                <hr>
+                <h6 >Agregar ítems a la solicitud creada</h6>
+                <div class="row g-2 align-items-end">
+                  <div class="col-md-4">
+                    <label class="form-label">Solicitud</label>
+                    <select id="solSelect-conjunta" class="form-select"></select>
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label">Item</label>
+                    <select id="solItem-conjunta" class="form-select"></select>
+                  </div>
+                  <div class="col-md-2">
+                    <label class="form-label">Cantidad</label>
+                    <input id="solQty-conjunta" type="number" min="1" class="form-control" value="1">
+                  </div>
+                  <div class="col-md-2 d-grid">
+                    <button class="btn btn-outline-primary " onclick="agregarItemSolicitud('conjunta')"><i class="fa-solid fa-plus"></i></button>
+                  </div>
                 </div>
-                <div class="col-md-4">
-                  <label class="form-label">Item</label>
-                  <select id="solItem-conjunta" class="form-select"></select>
-                </div>
-                <div class="col-md-2">
-                  <label class="form-label">Cantidad</label>
-                  <input id="solQty-conjunta" type="number" min="1" class="form-control" value="1">
-                </div>
-                <div class="col-md-2 d-grid">
-                  <button class="btn btn-outline-primary" onclick="agregarItemSolicitud('conjunta')">Agregar</button>
-                </div>
-              </div>
 
-              <div class="table-responsive mt-3">
-                <table class="table table-bordered text-center align-middle">
-                  <thead class="table-light">
-                    <tr><th>ID</th><th>Proveedor</th><th>Fecha</th><th>Items</th><th>Editar</th></tr>
-                  </thead>
-                  <tbody id="bodySolicitudes-conjunta"></tbody>
-                </table>
+                <div class="table-responsive mt-3">
+                  <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-2">
+                    <div class="input-group input-group-sm" style="max-width:260px;">
+                      <span class="input-group-text"><i class="fa-solid fa-magnifying-glass"></i></span>
+                      <input id="searchSolicitudes-conjunta" class="form-control" placeholder="Buscar proveedor...">
+                    </div>
+                    <nav aria-label="Paginación solicitudes conjunta">
+                      <ul id="pagerSolicitudes-conjunta" class="pagination pagination-sm mb-0"></ul>
+                    </nav>
+                  </div>
+                  <table class="table table-sm table-hover">
+                    <thead class="table-light">
+                      <tr><th>ID</th><th>Proveedor</th><th>Fecha</th><th>Items</th><th>Acciones</th></tr>
+                    </thead>
+                    <tbody id="bodySolicitudes-conjunta"></tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </div>
@@ -142,6 +156,15 @@ if(localStorage.getItem("login") !== "ok"){ window.location.href = "index.html";
 
               <hr>
               <div class="table-responsive">
+                <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-2">
+                  <div class="input-group input-group-sm" style="max-width:260px;">
+                    <span class="input-group-text"><i class="fa-solid fa-magnifying-glass"></i></span>
+                    <input id="searchRecepciones-conjunta" class="form-control" placeholder="Buscar proveedor...">
+                  </div>
+                  <nav aria-label="Paginación recepciones conjunta">
+                    <ul id="pagerRecepciones-conjunta" class="pagination pagination-sm mb-0"></ul>
+                  </nav>
+                </div>
                 <table class="table table-bordered text-center align-middle">
                   <thead class="table-light">
                     <tr><th>ID</th><th>Solicitud</th><th>Fecha</th><th>Proveedor</th><th>Items</th><th>Obs</th><th>Editar</th></tr>
@@ -198,6 +221,15 @@ if(localStorage.getItem("login") !== "ok"){ window.location.href = "index.html";
               </div>
 
               <div class="table-responsive mt-3">
+                <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-2">
+                  <div class="input-group input-group-sm" style="max-width:260px;">
+                    <span class="input-group-text"><i class="fa-solid fa-magnifying-glass"></i></span>
+                    <input id="searchSolicitudes-laura" class="form-control" placeholder="Buscar proveedor...">
+                  </div>
+                  <nav aria-label="Paginación solicitudes laura">
+                    <ul id="pagerSolicitudes-laura" class="pagination pagination-sm mb-0"></ul>
+                  </nav>
+                </div>
                 <table class="table table-bordered text-center align-middle">
                   <thead class="table-light">
                     <tr><th>ID</th><th>Proveedor</th><th>Fecha</th><th>Items</th><th>Editar</th></tr>
@@ -252,6 +284,15 @@ if(localStorage.getItem("login") !== "ok"){ window.location.href = "index.html";
 
               <hr>
               <div class="table-responsive">
+                <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-2">
+                  <div class="input-group input-group-sm" style="max-width:260px;">
+                    <span class="input-group-text"><i class="fa-solid fa-magnifying-glass"></i></span>
+                    <input id="searchRecepciones-laura" class="form-control" placeholder="Buscar proveedor...">
+                  </div>
+                  <nav aria-label="Paginación recepciones laura">
+                    <ul id="pagerRecepciones-laura" class="pagination pagination-sm mb-0"></ul>
+                  </nav>
+                </div>
                 <table class="table table-bordered text-center align-middle">
                   <thead class="table-light">
                     <tr><th>ID</th><th>Solicitud</th><th>Fecha</th><th>Proveedor</th><th>Items</th><th>Obs</th><th>Editar</th></tr>
@@ -308,6 +349,15 @@ if(localStorage.getItem("login") !== "ok"){ window.location.href = "index.html";
               </div>
 
               <div class="table-responsive mt-3">
+                <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-2">
+                  <div class="input-group input-group-sm" style="max-width:260px;">
+                    <span class="input-group-text"><i class="fa-solid fa-magnifying-glass"></i></span>
+                    <input id="searchSolicitudes-gustavo" class="form-control" placeholder="Buscar proveedor...">
+                  </div>
+                  <nav aria-label="Paginación solicitudes gustavo">
+                    <ul id="pagerSolicitudes-gustavo" class="pagination pagination-sm mb-0"></ul>
+                  </nav>
+                </div>
                 <table class="table table-bordered text-center align-middle">
                   <thead class="table-light">
                     <tr><th>ID</th><th>Proveedor</th><th>Fecha</th><th>Items</th><th>Editar</th></tr>
@@ -362,6 +412,15 @@ if(localStorage.getItem("login") !== "ok"){ window.location.href = "index.html";
 
               <hr>
               <div class="table-responsive">
+                <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-2">
+                  <div class="input-group input-group-sm" style="max-width:260px;">
+                    <span class="input-group-text"><i class="fa-solid fa-magnifying-glass"></i></span>
+                    <input id="searchRecepciones-gustavo" class="form-control" placeholder="Buscar proveedor...">
+                  </div>
+                  <nav aria-label="Paginación recepciones gustavo">
+                    <ul id="pagerRecepciones-gustavo" class="pagination pagination-sm mb-0"></ul>
+                  </nav>
+                </div>
                 <table class="table table-bordered text-center align-middle">
                   <thead class="table-light">
                     <tr><th>ID</th><th>Solicitud</th><th>Fecha</th><th>Proveedor</th><th>Items</th><th>Obs</th><th>Editar</th></tr>
@@ -447,6 +506,15 @@ if(localStorage.getItem("login") !== "ok"){ window.location.href = "index.html";
         </div>
 
         <div class="table-responsive">
+          <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-2">
+            <div class="input-group input-group-sm" style="max-width:260px;">
+              <span class="input-group-text"><i class="fa-solid fa-magnifying-glass"></i></span>
+              <input id="searchEntregas-conjunta" class="form-control" placeholder="Buscar persona o ítem...">
+            </div>
+            <nav aria-label="Paginación entregas conjunta">
+              <ul id="pagerEntregas-conjunta" class="pagination pagination-sm mb-0"></ul>
+            </nav>
+          </div>
           <table class="table table-bordered text-center align-middle bg-white shadow-sm">
             <thead class="table-light">
               <tr><th>ID</th><th>Fecha</th><th>Persona</th><th>Estado</th><th>Items</th><th>Obs</th><th>Acciones</th></tr>
@@ -515,6 +583,15 @@ if(localStorage.getItem("login") !== "ok"){ window.location.href = "index.html";
         </div>
 
         <div class="table-responsive">
+          <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-2">
+            <div class="input-group input-group-sm" style="max-width:260px;">
+              <span class="input-group-text"><i class="fa-solid fa-magnifying-glass"></i></span>
+              <input id="searchEntregas-laura" class="form-control" placeholder="Buscar persona o ítem...">
+            </div>
+            <nav aria-label="Paginación entregas laura">
+              <ul id="pagerEntregas-laura" class="pagination pagination-sm mb-0"></ul>
+            </nav>
+          </div>
           <table class="table table-bordered text-center align-middle bg-white shadow-sm">
             <thead class="table-light">
               <tr><th>ID</th><th>Fecha</th><th>Persona</th><th>Estado</th><th>Items</th><th>Obs</th><th>Acciones</th></tr>
@@ -583,6 +660,15 @@ if(localStorage.getItem("login") !== "ok"){ window.location.href = "index.html";
         </div>
 
         <div class="table-responsive">
+          <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-2">
+            <div class="input-group input-group-sm" style="max-width:260px;">
+              <span class="input-group-text"><i class="fa-solid fa-magnifying-glass"></i></span>
+              <input id="searchEntregas-gustavo" class="form-control" placeholder="Buscar persona o ítem...">
+            </div>
+            <nav aria-label="Paginación entregas gustavo">
+              <ul id="pagerEntregas-gustavo" class="pagination pagination-sm mb-0"></ul>
+            </nav>
+          </div>
           <table class="table table-bordered text-center align-middle bg-white shadow-sm">
             <thead class="table-light">
               <tr><th>ID</th><th>Fecha</th><th>Persona</th><th>Estado</th><th>Items</th><th>Obs</th><th>Acciones</th></tr>
@@ -769,6 +855,7 @@ if(localStorage.getItem("login") !== "ok"){ window.location.href = "index.html";
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.19.3/dist/xlsx.full.min.js"></script>
+<script src="libs/xlsx.full.min.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
